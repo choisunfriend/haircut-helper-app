@@ -61,7 +61,10 @@
         GRAV3D: { curlK: 0.8 },          // 컬 머리는 덜 처짐 → 길이·볼륨 유지
         HAIR_FIELD3D: { maxAlign: 0.4 }, // 원래 사진(곧은 머리) 결에 덜 끌림 — 중립 재빌드 필요
         MANNEQUIN: { lenPct: 0.9 },      // 어깨 따라간 이상치 가닥 제외
-        MQ_FRINGE: { tipFaceFrac: -0.1 },// 앞머리 끝: 눈높이 → 눈썹과 눈 사이
+        MQ_FRINGE: {
+          tipFaceFrac: -0.1,     // 앞머리 끝: 눈높이 → 눈썹과 눈 사이
+          crownAllAround: false  // 크라운을 눈썹 높이에서 "한 바퀴 전부" 자르던 것 → 앞쪽만 자름
+        },                       //  (이게 켜져 있으면 크라운 길이를 아무리 늘려도 눈썹 아래로 못 내려옴)
         HAIR_DYE: { sMax: 1.3, highlightK: 0.6, glossDesat: 0.7 } // 원본 광택띠가 은색 철사로 번지는 것 억제
       },
       rodScale: 2.0,   // curlRodRadius × — 웨이브 50 에서 로드 ≈ 3.4cm, 코일 지름 ≈ 2.5cm
@@ -69,7 +72,11 @@
       after: { front: { curl: 20 } },   // 시스루 앞머리는 거의 곧은 C컬
       shade: { ao: 0.42, lumCap: 1.3, spec: 0.22, specPow: 60 },
       silhouette: {   // 레퍼런스 사진 실측(약 25° 돌아간 사진이라 정면 근사치)
-        front: { wh: 0.95, wp: [0.10, 0.50, 0.72, 0.91, 0.94, 0.99, 0.97, 0.95, 0.87, 0.40, 0.05] }
+        front: {
+          wh: 0.95,
+          wp: [0.10, 0.50, 0.72, 0.91, 0.94, 0.99, 0.97, 0.95, 0.87, 0.40, 0.05],
+          bot: [0.49, 0.84, 0.90, 0.97, 0.44, 0.54, 0.52, 0.55, 0.63, 0.80, 0.85, 0.80, 0.67]  // 가운데 낮은 칸 = 앞머리 끝
+        }
       },
       specPatch: function (spec) {
         spec.cut.front.density = 20;
@@ -241,6 +248,22 @@
   /* ------------------------------------------------------------------------
    * 4. 길이 상한 확장 + 100에 걸린 스펙 섹션 끝까지 풀기
    * ---------------------------------------------------------------------- */
+  // 길이를 더 늘려도 끝이 안 내려가는 지점(포화점)을 찾습니다.
+  // 가닥 원료 길이·자르기 상한·앞머리선 때문에 어느 값부터는 막대를 밀어도 화면이 그대로입니다.
+  // 기준을 그 너머에 두면 손잡이 오른쪽 절반이 "죽은 구간"이 되므로, 기준은 포화점을 넘지 않게 합니다.
+  function saturationLen(sec, ref) {
+    var eps = 0.005 * ref.H;
+    var yEnd = measureSectionTipY(sec, SB.LEN_EXT);
+    if (yEnd == null) return null;
+    var lo = 0, hi = SB.LEN_EXT;
+    for (var i = 0; i < 16; i++) {
+      var mid = (lo + hi) / 2, y = measureSectionTipY(sec, mid);
+      if (y == null) return null;
+      if (Math.abs(y - yEnd) <= eps) hi = mid; else lo = mid;
+    }
+    return Math.ceil(hi);
+  }
+
   function extendPinned(id, rep) {
     if (!rep || !rep.unit || typeof measureSectionTipY !== 'function' || typeof headHeightRef !== 'function') return;
     var spec = null;
@@ -253,11 +276,14 @@
       if (rep.unit[sec] !== 'tip' || spec.tipAt[sec] == null || !S.sections[sec]) continue;
       if (!(S.sections[sec].length >= 99.5)) continue;
       var target = ref.yTop - spec.tipAt[sec] * ref.H;
-      var yMax = measureSectionTipY(sec, SB.LEN_EXT);
-      if (yMax == null) continue;
-      var lo = 100, hi = SB.LEN_EXT, best;
-      if (yMax > target) best = SB.LEN_EXT;       // 끝까지 가도 못 닿음
-      else {
+      var sat = saturationLen(sec, ref);
+      if (sat == null) continue;
+      var best;
+      var ySat = measureSectionTipY(sec, sat);
+      if (ySat > target) {
+        best = sat;                                   // 끝까지 가도 목표에 못 닿음 → 닿을 수 있는 최대
+      } else {
+        var lo = 0, hi = sat;                         // 포화점 안쪽에서 목표를 찾음
         for (var i = 0; i < 18; i++) {
           var mid = (lo + hi) / 2, y = measureSectionTipY(sec, mid);
           if (y == null) break;
@@ -268,8 +294,10 @@
       S.sections[sec].length = best;
       if (rep.solved) rep.solved[sec] = best;
       var yB = measureSectionTipY(sec, best);
-      console.log(TAG + ' ' + sec + ' 길이 100에 걸려 있던 것을 ' + best + '까지 풀었습니다 · 남은 오차 ' +
-        (yB == null ? '—' : ((yB - target) / ref.H * 100).toFixed(1) + '%') + (best >= SB.LEN_EXT ? ' (상한 도달 — 가닥 원료 길이가 모자랍니다)' : ''));
+      var miss = yB == null ? null : (yB - target) / ref.H * 100;
+      console.log(TAG + ' ' + sec + ' 길이: 100에 걸려 있던 것 → 기준 ' + best + ' (이 값부터는 늘려도 끝이 안 내려가는 지점 ' + sat + ')' +
+        ' · 남은 오차 ' + (miss == null ? '—' : miss.toFixed(1) + '%') +
+        (best >= sat && miss != null && Math.abs(miss) > 2 ? ' — 길이로는 더 못 맞춥니다(가닥 원료·앞머리선·컬 줄어듦 쪽)' : ''));
     }
   }
 
