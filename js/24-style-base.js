@@ -1,0 +1,594 @@
+/* ==========================================================================
+ * 24-style-base.js — 스타일 기준점(Style Base) + 슬라이더 중앙화 + 스타일별 엔진 프로필
+ *
+ * 로드 위치: index.html 에서 23-section-all.js 바로 다음 줄
+ *   <script src="js/24-style-base.js?v=20260921g"></script>
+ *
+ * 하는 일
+ *  1) 스타일 = 슬라이더와 무관한 "기준 값".  스타일을 걸면 그 결과를 기준으로 저장하고
+ *     모든 섹션 슬라이더의 손잡이는 가운데(중위값)에 둡니다.  손잡이를 움직이면
+ *     기준 ± 이동량 = 실제 값.  (엔진은 지금처럼 실제 값을 state.sections 에서 읽습니다.)
+ *  2) 길이는 100 에서 잘리던 상한을 LEN_EXT 까지 늘려, 스펙 풀이가 100에 걸리던
+ *     섹션(크라운 등)을 끝까지 풀고 그 값을 기준으로 삼습니다.
+ *  3) 스타일마다 엔진 설정(컬 번들·볼륨·중력·앞머리·염색 음영)을 "프로필"로 묶어
+ *     그 스타일을 걸 때만 적용하고, 다른 스타일로 가면 원래 값으로 되돌립니다.
+ *  4) 볼륨 슬라이더 50 = 스타일 기준 볼륨 (예전: 50 = 볼륨 0).
+ *  5) 3D 두상 헤어 정점색에 깊이 차폐(AO)·밝기 상한·결 하이라이트를 입혀 입체감을 냅니다.
+ *
+ * 끄기: 콘솔에서  STYLE_BASE.on = false  (래퍼가 전부 원래 함수로 통과) → 뷰 다시 그리기
+ * 상태: STYLE_BASE.status()
+ * ========================================================================== */
+(function () {
+  'use strict';
+  var G = window;
+  var TAG = '[스타일기준]';
+
+  /* ------------------------------------------------------------------------
+   * 0. 설정
+   * ---------------------------------------------------------------------- */
+  var SB = G.STYLE_BASE = G.STYLE_BASE || {};
+  SB.on = true;
+  SB.LEN_EXT = 200;          // 길이 실제 값 상한 (예전 100)
+  /* _volHash 부호 버그 수정 범위
+   *  원래 식 h ^= h>>>16 뒤 h/2^32 가 음수가 되어 0~1 대신 −0.5~0.5 를 돌려줍니다.
+   *  → 볼륨 노이즈 배수 평균 0.55(최소 0.1), 삐침머리 판정(h<0.25)이 ~75% 가닥에 걸려 끝을 안으로 당김.
+   *  false = 프로필이 걸린 스타일에서만 고침(다른 스타일은 지금 보이는 그대로)
+   *  true  = 모든 스타일에서 고침(다른 스타일도 볼륨이 커집니다 — 확인 후 켜세요) */
+  SB.fixVolHashAll = false;
+  SB.PARAM_KEYS = ['length', 'elevation', 'texture', 'density', 'overdirection', 'line', 'curl', 'wave', 'curlDir'];
+
+  /* 스타일별 엔진 프로필 — 키는 STYLE_SPECS 의 id (또는 커스텀 스타일의 profileId) */
+  SB.profiles = {
+    wavy_bob_seethrough: {
+      label: 'Wavy bob · See-through bangs · Chunky curls',
+      config: {
+        // 굴곡: 가는 전화선 코일 → 덩어리로 같이 움직이는 굵은 S웨이브
+        CURL_BUNDLE: {
+          clumpPull: 0.7,      // 0.3 → 번들로 뭉침
+          phaseJitter: 0.45,   // 1.2 → 번들 안 가닥이 같은 위상
+          microAmp: 0.04,      // 잔곱슬 줄임
+          microPhase: 0.15,
+          relax: 1.2,          // 1.45 → 코일 반경 약간 줄임 (늘어난 용수철 방지)
+          pitchThick: 1.4,     // 3.5 → 굵은 로드에서 파장이 너무 길어지지 않게 (한 바퀴 ≈ 6cm)
+          rodK: 0.8            // 번들 칸 = 로드×0.8 ≈ 2.4cm (레퍼런스 덩어리 폭)
+        },
+        CURL3D_FIX: { ampGamma: 0.7 },   // 컬 50 → 진폭 0.62 (예전 0.5)
+        // 볼륨: 가운데(볼·귀 높이)가 제일 넓고 끝은 안으로
+        VOLUME3D: {
+          AMP: 0.18, tipHold: 0.55,
+          secK: { crown: 1.2, front: 0.6, temple: 0.9, side: 1.0, occipital: 1.0, nape: 0.5 }
+        },
+        GRAV3D: { curlK: 0.8 },          // 컬 머리는 덜 처짐 → 길이·볼륨 유지
+        HAIR_FIELD3D: { maxAlign: 0.4 }, // 원래 사진(곧은 머리) 결에 덜 끌림 — 중립 재빌드 필요
+        MANNEQUIN: { lenPct: 0.9 },      // 어깨 따라간 이상치 가닥 제외
+        MQ_FRINGE: { tipFaceFrac: -0.1 },// 앞머리 끝: 눈높이 → 눈썹과 눈 사이
+        HAIR_DYE: { sMax: 1.3, highlightK: 0.6, glossDesat: 0.7 } // 원본 광택띠가 은색 철사로 번지는 것 억제
+      },
+      rodScale: 2.0,   // curlRodRadius × — 웨이브 50 에서 로드 ≈ 3.4cm, 코일 지름 ≈ 2.5cm
+      volBase: 1.0,    // 볼륨 슬라이더 50 = AMP×1.0 만큼 부풂
+      after: { front: { curl: 20 } },   // 시스루 앞머리는 거의 곧은 C컬
+      shade: { ao: 0.42, lumCap: 1.3, spec: 0.22, specPow: 60 },
+      silhouette: {   // 레퍼런스 사진 실측(약 25° 돌아간 사진이라 정면 근사치)
+        front: { wh: 0.95, wp: [0.10, 0.50, 0.72, 0.91, 0.94, 0.99, 0.97, 0.95, 0.87, 0.40, 0.05] }
+      },
+      specPatch: function (spec) {
+        spec.cut.front.density = 20;
+        spec.perm.wave = 50;
+        spec.styling.volume = 50;
+      }
+    }
+  };
+
+  /* ------------------------------------------------------------------------
+   * 1. 전역 접근 (다른 스크립트의 최상위 const 는 이름으로만 접근 가능)
+   * ---------------------------------------------------------------------- */
+  var CFG = {
+    CURL_BUNDLE: function () { return G.CURL_BUNDLE || null; },
+    CURL3D_FIX: function () { return typeof CURL3D_FIX !== 'undefined' ? CURL3D_FIX : null; },
+    VOLUME3D: function () { return typeof VOLUME3D !== 'undefined' ? VOLUME3D : null; },
+    GRAV3D: function () { return typeof GRAV3D !== 'undefined' ? GRAV3D : null; },
+    HAIR_FIELD3D: function () { return typeof HAIR_FIELD3D !== 'undefined' ? HAIR_FIELD3D : null; },
+    MANNEQUIN: function () { return typeof MANNEQUIN !== 'undefined' ? MANNEQUIN : null; },
+    MQ_FRINGE: function () { return typeof MQ_FRINGE !== 'undefined' ? MQ_FRINGE : null; },
+    HAIR_DYE: function () { return typeof HAIR_DYE !== 'undefined' ? HAIR_DYE : null; }
+  };
+  var NEUTRAL_KEYS = { HAIR_FIELD3D: ['maxAlign'] };            // 바뀌면 중립 3D 재빌드
+  var MQ_KEYS = { MANNEQUIN: ['lenPct'], MQ_FRINGE: null };     // 바뀌면 마네킹 재생성(null=전부)
+
+  function st() { return typeof state !== 'undefined' ? state : null; }
+  function isObj(v) { return v && typeof v === 'object' && !Array.isArray(v); }
+  function clone(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function orig(name) { return SB._orig[name]; }
+  SB._orig = SB._orig || {};
+
+  /* ------------------------------------------------------------------------
+   * 2. 프로필 적용/복원
+   * ---------------------------------------------------------------------- */
+  var DEFAULTS = {};
+  function snapshotDefaults() {
+    for (var pid in SB.profiles) {
+      var conf = SB.profiles[pid].config || {};
+      for (var cname in conf) {
+        var obj = CFG[cname] && CFG[cname]();
+        if (!obj) continue;
+        DEFAULTS[cname] = DEFAULTS[cname] || {};
+        for (var k in conf[cname]) if (!(k in DEFAULTS[cname])) DEFAULTS[cname][k] = clone(obj[k]);
+      }
+    }
+  }
+
+  function sigOf(map) {
+    var out = [];
+    for (var c in map) {
+      var o = CFG[c] && CFG[c]();
+      if (!o) continue;
+      var keys = map[c] || Object.keys(o).filter(function (k) { return typeof o[k] !== 'object'; });
+      keys.forEach(function (k) { out.push(c + '.' + k + '=' + o[k]); });
+    }
+    return out.join('|');
+  }
+
+  SB.activeId = null;
+  SB.active = null;
+  var builtNeutralSig = null, lastMqSig = null;
+
+  function bumpCaches() {
+    try { if (typeof ADJ_CACHE !== 'undefined' && ADJ_CACHE.bump) ADJ_CACHE.bump(); } catch (e) {}
+    try { if (typeof DYE_LUT !== 'undefined' && DYE_LUT.map) DYE_LUT.map.clear(); } catch (e) {}
+  }
+
+  function applyProfile(id) {
+    var prof = (id && SB.profiles[id]) || null;
+    // 1) 기본값 복원
+    for (var c in DEFAULTS) {
+      var o = CFG[c] && CFG[c]();
+      if (!o) continue;
+      for (var k in DEFAULTS[c]) o[k] = clone(DEFAULTS[c][k]);
+    }
+    // 2) 프로필 덮기
+    if (prof && prof.config) {
+      for (var c2 in prof.config) {
+        var o2 = CFG[c2] && CFG[c2]();
+        if (!o2) continue;
+        for (var k2 in prof.config[c2]) {
+          var v = prof.config[c2][k2];
+          o2[k2] = (isObj(v) && isObj(o2[k2])) ? Object.assign({}, o2[k2], clone(v)) : clone(v);
+        }
+      }
+    }
+    // 3) 스펙 원본 보정(한 번)
+    if (prof && prof.specPatch && !prof._specPatched) {
+      try {
+        var spec = typeof STYLE_SPECS !== 'undefined' ? STYLE_SPECS[id] : null;
+        if (spec) { prof.specPatch(spec); prof._specPatched = true; }
+      } catch (e) { console.warn(TAG + ' 스펙 보정 실패', e); }
+    }
+    // 4) 실루엣 목표
+    if (prof && prof.silhouette) {
+      try { if (typeof SILHOUETTE_REF !== 'undefined' && !SILHOUETTE_REF[id]) SILHOUETTE_REF[id] = clone(prof.silhouette); } catch (e) {}
+    }
+    var changed = SB.activeId !== (prof ? id : null);
+    SB.activeId = prof ? id : null;
+    SB.active = prof;
+    bumpCaches();
+
+    // 5) 빌드 시점 설정이 바뀌었으면 다시 만들기
+    var S = st();
+    var mq = sigOf(MQ_KEYS);
+    if (lastMqSig !== null && mq !== lastMqSig && S) S.hair3Dmannequin = null;
+    lastMqSig = mq;
+    if (S && S.hair3Dneutral && builtNeutralSig !== null && builtNeutralSig !== sigOf(NEUTRAL_KEYS) && typeof rebuildHair3D === 'function') {
+      console.log(TAG + ' 결 정렬 설정이 달라 중립 3D를 다시 만듭니다 (' + (SB.activeId || '기본') + ')');
+      try { rebuildHair3D(); } catch (e) { console.warn(TAG + ' 재빌드 실패', e); }
+    }
+    if (changed) console.log(TAG + ' 엔진 프로필 → ' + (prof ? (prof.label || id) : '기본값'));
+  }
+  SB.applyProfile = applyProfile;
+
+  /* ------------------------------------------------------------------------
+   * 3. 슬라이더 ↔ 실제 값 (기준 + 중앙화)
+   * ---------------------------------------------------------------------- */
+  function paramDef(key) {
+    try { if (typeof gyAllParamDef === 'function') return gyAllParamDef(key); } catch (e) {}
+    try {
+      for (var i = 0; i < GYEOL_GROUPS.length; i++) {
+        var p = (GYEOL_GROUPS[i].params || []).find(function (q) { return q.key === key; });
+        if (p) return p;
+      }
+    } catch (e) {}
+    return { key: key, min: 0, max: 100, unit: '' };
+  }
+  function effMax(key, def) { return key === 'length' ? SB.LEN_EXT : def.max; }
+  function baseOf(sec, key) {
+    var S = st(), b = S && S._styleBase && S._styleBase[sec];
+    return b && typeof b[key] === 'number' ? b[key] : null;
+  }
+  function toPos(sec, key, eff, def) {
+    def = def || paramDef(key);
+    var b = SB.on ? baseOf(sec, key) : null;
+    if (b == null) return eff;
+    return clamp((def.min + def.max) / 2 + (eff - b), def.min, def.max);
+  }
+  function toEff(sec, key, pos, def) {
+    def = def || paramDef(key);
+    var b = SB.on ? baseOf(sec, key) : null;
+    if (b == null) return pos;
+    var e = b + (pos - (def.min + def.max) / 2);
+    return Math.round(clamp(e, def.min, effMax(key, def)) * 1000) / 1000;
+  }
+  SB.toPos = toPos; SB.toEff = toEff;
+
+  function captureBase(reason) {
+    var S = st();
+    if (!S || !S.sections) return;
+    var base = {};
+    for (var sec in S.sections) {
+      base[sec] = {};
+      SB.PARAM_KEYS.forEach(function (k) { if (typeof S.sections[sec][k] === 'number') base[sec][k] = S.sections[sec][k]; });
+    }
+    S._styleBase = base;
+    console.log(TAG + ' 기준 저장(' + reason + ') — 손잡이를 가운데로 둡니다. 길이 기준: ' +
+      Object.keys(base).map(function (s) { return s + ' ' + (base[s].length != null ? Math.round(base[s].length) : '-'); }).join(' · '));
+  }
+  function clearBase() { var S = st(); if (S) S._styleBase = null; }
+  SB.captureBase = captureBase; SB.clearBase = clearBase;
+
+  function refreshPanel() {
+    try { if (typeof buildGyPanel === 'function') buildGyPanel(); else if (typeof buildGyControls === 'function') buildGyControls(); } catch (e) {}
+  }
+
+  /* ------------------------------------------------------------------------
+   * 4. 길이 상한 확장 + 100에 걸린 스펙 섹션 끝까지 풀기
+   * ---------------------------------------------------------------------- */
+  function extendPinned(id, rep) {
+    if (!rep || !rep.unit || typeof measureSectionTipY !== 'function' || typeof headHeightRef !== 'function') return;
+    var spec = null;
+    try { spec = getStyleSpec(id); } catch (e) {}
+    if (!spec || !spec.tipAt) return;
+    var ref = headHeightRef();
+    if (!ref) return;
+    var S = st();
+    for (var sec in rep.unit) {
+      if (rep.unit[sec] !== 'tip' || spec.tipAt[sec] == null || !S.sections[sec]) continue;
+      if (!(S.sections[sec].length >= 99.5)) continue;
+      var target = ref.yTop - spec.tipAt[sec] * ref.H;
+      var yMax = measureSectionTipY(sec, SB.LEN_EXT);
+      if (yMax == null) continue;
+      var lo = 100, hi = SB.LEN_EXT, best;
+      if (yMax > target) best = SB.LEN_EXT;       // 끝까지 가도 못 닿음
+      else {
+        for (var i = 0; i < 18; i++) {
+          var mid = (lo + hi) / 2, y = measureSectionTipY(sec, mid);
+          if (y == null) break;
+          if (y > target) lo = mid; else hi = mid;
+        }
+        best = Math.round((lo + hi) / 2);
+      }
+      S.sections[sec].length = best;
+      if (rep.solved) rep.solved[sec] = best;
+      var yB = measureSectionTipY(sec, best);
+      console.log(TAG + ' ' + sec + ' 길이 100에 걸려 있던 것을 ' + best + '까지 풀었습니다 · 남은 오차 ' +
+        (yB == null ? '—' : ((yB - target) / ref.H * 100).toFixed(1) + '%') + (best >= SB.LEN_EXT ? ' (상한 도달 — 가닥 원료 길이가 모자랍니다)' : ''));
+    }
+  }
+
+  /* ------------------------------------------------------------------------
+   * 5. 3D 헤어 음영 (깊이 차폐 · 밝기 상한 · 결 하이라이트)
+   * ---------------------------------------------------------------------- */
+  function shadeHairObject(obj) {
+    var sh = SB.active && SB.active.shade;
+    if (!sh || !obj || !obj.geometry) return obj;
+    var g = obj.geometry, P = g.attributes.position, C = g.attributes.color;
+    if (!P || !C || P.count < 4) return obj;
+    var E;
+    try { E = getHeadEllipsoid(); } catch (e) { return obj; }
+    var cy = typeof SCALP_CENTER_Y !== 'undefined' ? SCALP_CENTER_Y : 0.15;
+    var n = P.count, NT = 36, NP = 18;
+    var rho = new Float32Array(n), bin = new Int32Array(n), bmax = new Float32Array(NT * NP);
+    for (var i = 0; i < n; i++) {
+      var dx = P.getX(i) / E.a, dy = (P.getY(i) - cy) / E.b, dz = P.getZ(i) / E.c;
+      var r = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
+      var th = Math.atan2(dx, dz), ph = Math.acos(clamp(dy / r, -1, 1));
+      var bi = Math.min(NP - 1, (ph / Math.PI * NP) | 0) * NT + Math.min(NT - 1, ((th + Math.PI) / (2 * Math.PI) * NT) | 0);
+      rho[i] = r; bin[i] = bi; if (r > bmax[bi]) bmax[bi] = r;
+    }
+    // 밝기 중앙값
+    var lums = [];
+    for (var j = 0; j < n; j += 7) lums.push(0.299 * C.getX(j) + 0.587 * C.getY(j) + 0.114 * C.getZ(j));
+    lums.sort(function (a, b) { return a - b; });
+    var cap = (lums[lums.length >> 1] || 0.2) * sh.lumCap;
+    // 빛: 앞 위쪽, 시선 +z
+    var L = [0.3, 0.8, 0.5], V = [0, 0, 1], H = [L[0] + V[0], L[1] + V[1], L[2] + V[2]];
+    var hl = Math.hypot(H[0], H[1], H[2]); H = [H[0] / hl, H[1] / hl, H[2] / hl];
+    var out = new Float32Array(n * 3);
+    for (var s = 0; s + 1 < n; s += 2) {
+      var tx = P.getX(s + 1) - P.getX(s), ty = P.getY(s + 1) - P.getY(s), tz = P.getZ(s + 1) - P.getZ(s);
+      var tl = Math.hypot(tx, ty, tz) || 1e-9;
+      var th2 = (tx * H[0] + ty * H[1] + tz * H[2]) / tl;
+      var kk = Math.pow(Math.sqrt(Math.max(0, 1 - th2 * th2)), sh.specPow);
+      for (var q = s; q < s + 2; q++) {
+        var bm = bmax[bin[q]], d = bm > 1.02 ? clamp((rho[q] - 1) / (bm - 1), 0, 1) : 1;
+        var ao = sh.ao + (1 - sh.ao) * Math.pow(d, 0.8);
+        var rr = C.getX(q), gg = C.getY(q), bb = C.getZ(q);
+        var lum = 0.299 * rr + 0.587 * gg + 0.114 * bb;
+        if (lum > cap && lum > 0) { var f = cap / lum; rr *= f; gg *= f; bb *= f; }
+        var sp = kk * sh.spec * d * d;
+        out[q * 3] = Math.min(1, rr * ao + sp * 0.85);
+        out[q * 3 + 1] = Math.min(1, gg * ao + sp * 0.8);
+        out[q * 3 + 2] = Math.min(1, bb * ao + sp * 0.72);
+      }
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(out, 3));
+    if (!SB._shadeLogged) { SB._shadeLogged = true; console.log(TAG + ' 3D 음영 — 안쪽 가닥 ×' + sh.ao + ' · 밝기 상한 중앙값×' + sh.lumCap + ' · 결 하이라이트 ' + sh.spec); }
+    return obj;
+  }
+
+  /* ------------------------------------------------------------------------
+   * 6. 래퍼 설치
+   * ---------------------------------------------------------------------- */
+  function wrap(name, make) {
+    var f = G[name];
+    if (typeof f !== 'function') { console.warn(TAG + ' ' + name + ' 없음 — 건너뜀'); return; }
+    if (f.__sbWrapped) return;
+    SB._orig[name] = f;
+    var w = make(f);
+    w.__sbWrapped = true;
+    G[name] = w;
+  }
+
+  function install() {
+    snapshotDefaults();
+    lastMqSig = sigOf(MQ_KEYS);
+
+    // 길이 상한 확장 (100 → LEN_EXT). 100 이하에서는 원래 식과 같습니다.
+    wrap('sectionLengthRatio', function (f) {
+      return function (sec, len) {
+        if (!SB.on || !(typeof len === 'number' && len > 100)) return f.apply(this, arguments);
+        var d = (typeof SECTIONS !== 'undefined' && SECTIONS[sec] && SECTIONS[sec].defaults && typeof SECTIONS[sec].defaults.length === 'number') ? SECTIONS[sec].defaults.length : 50;
+        var per = typeof LENGTH_RATIO_PER_UNIT !== 'undefined' ? LENGTH_RATIO_PER_UNIT : 0.018;
+        // 원래 식: 기본값 이상 구간은 1 + (v − 기본값) × LENGTH_RATIO_PER_UNIT — 같은 직선을 LEN_EXT까지 연장
+        return 1 + (Math.min(SB.LEN_EXT, len) - d) * per;
+      };
+    });
+
+    // 컬 로드 굵기 배율
+    wrap('curlRodRadius', function (f) {
+      return function () {
+        var r = f.apply(this, arguments);
+        var k = SB.on && SB.active && SB.active.rodScale;
+        return k ? r * k : r;
+      };
+    });
+
+    // 볼륨: 슬라이더 50 = 스타일 기준 볼륨
+    wrap('volumeLiftHead', function (f) {
+      return function (p, vol) {
+        var vb = SB.on && SB.active && SB.active.volBase;
+        if (!vb) return f.apply(this, arguments);
+        var v1 = f.call(this, p, 100);
+        if (!v1) return null;
+        var t = vb + (clamp(typeof vol === 'number' ? vol : 50, 0, 100) - 50) / 50;
+        if (Math.abs(t) < 1e-6) return null;
+        return { x: v1.x * t, y: v1.y * t, z: v1.z * t };
+      };
+    });
+
+    // _volHash 부호 버그 (위 fixVolHashAll 설명 참고)
+    wrap('_volHash', function (f) {
+      return function () {
+        var r = f.apply(this, arguments);
+        if (!SB.on || !(SB.fixVolHashAll || SB.active)) return r;
+        return r < 0 ? r + 1 : r;   // 부호 있는 int32 → 부호 없는 값으로
+      };
+    });
+
+    // 중립 3D 빌드 시점의 설정 서명 기록
+    wrap('buildNeutralHair3D', function (f) {
+      return function (cb) {
+        var running = typeof NEUTRAL_BUILD !== 'undefined' && NEUTRAL_BUILD.running;
+        if (!running) builtNeutralSig = sigOf(NEUTRAL_KEYS);
+        return f.apply(this, arguments);
+      };
+    });
+
+    // 스타일 선택: 프로필을 먼저 걸고(마네킹이 올바른 설정으로 만들어지게) 원래 동작
+    wrap('selectStyle', function (f) {
+      return function (styleId) {
+        if (!SB.on) return f.apply(this, arguments);
+        var sty = null;
+        try { sty = STYLES.find(function (s) { return s.id === styleId; }); } catch (e) {}
+        var pid = sty ? (sty.specId || sty.profileId || null) : null;
+        clearBase();
+        applyProfile(pid);
+        var r = f.apply(this, arguments);
+        if (sty && !sty.specId && sty.sections) { captureBase('저장 스타일 ' + (sty.name || sty.id)); refreshPanel(); }
+        return r;
+      };
+    });
+    wrap('selectNoStyle', function (f) {
+      return function () { if (SB.on) { clearBase(); applyProfile(null); } return f.apply(this, arguments); };
+    });
+    wrap('resetSections', function (f) {
+      return function () { clearBase(); return f.apply(this, arguments); };
+    });
+
+    // 스펙 적용: 프로필 → 원래 풀이 → 100에 걸린 섹션 확장 → 후처리 → 기준 저장
+    wrap('applyStyleSpecAndRender', function (f) {
+      return function (id) {
+        var S = st();
+        if (SB.on && !(S && S.specAppliedId === id)) applyProfile(id);
+        return f.apply(this, arguments);
+      };
+    });
+    wrap('applyStyleSpec', function (f) {
+      return function (id) {
+        var rep = f.apply(this, arguments);
+        if (!SB.on || !rep) return rep;
+        try { extendPinned(id, rep); } catch (e) { console.warn(TAG + ' 길이 확장 실패', e); }
+        var prof = SB.profiles[id], S = st();
+        if (prof && prof.after && S) {
+          for (var sec in prof.after) if (S.sections[sec]) Object.assign(S.sections[sec], prof.after[sec]);
+        }
+        captureBase('스펙 ' + id);
+        bumpCaches();
+        return rep;
+      };
+    });
+    wrap('clearStyleSpec', function (f) {
+      return function () {
+        var r = f.apply(this, arguments);
+        if (SB.on) { clearBase(); applyProfile(null); refreshPanel(); }
+        return r;
+      };
+    });
+
+    // 현재 상태를 스타일로 저장할 때 엔진 프로필도 같이 저장
+    wrap('registerCurrentAsStyle', function (f) {
+      return function () {
+        var before = [];
+        try { before = STYLES.slice(); } catch (e) {}
+        var r = f.apply(this, arguments);
+        try {
+          if (SB.activeId) {
+            var added = STYLES.filter(function (s) { return before.indexOf(s) < 0; });
+            added.forEach(function (s) { if (!s.profileId && !s.specId) s.profileId = SB.activeId; });
+            if (added.length && typeof saveCustomStylesToStorage === 'function') saveCustomStylesToStorage();
+          }
+        } catch (e) {}
+        return r;
+      };
+    });
+
+    /* --- 섹션별 슬라이더 --- */
+    wrap('gyBuildRangeCtrl', function (f) {
+      return function (sec, def) {
+        var el = f.apply(this, arguments);
+        try {
+          var S = st(), eff = S.sections[sec][def.key];
+          var inp = el.querySelector('input[type=range]');
+          if (inp && typeof eff === 'number') inp.value = toPos(sec, def.key, eff, def);
+        } catch (e) {}
+        return el;
+      };
+    });
+    wrap('syncGyParamUI', function (f) {
+      return function (sec, key) {
+        var r = f.apply(this, arguments);
+        try {
+          var inp = document.getElementById('gyrange-' + sec + '-' + key), eff = st().sections[sec][key];
+          if (inp && typeof eff === 'number') inp.value = toPos(sec, key, eff);
+        } catch (e) {}
+        return r;
+      };
+    });
+    wrap('onGySlider', function (f) {
+      return function (sec, key, val) {
+        var S = st();
+        if (!SB.on || !S || !S.sections[sec] || baseOf(sec, key) == null) return f.apply(this, arguments);
+        var def = paramDef(key), pos = parseFloat(val);
+        var prev = typeof S.sections[sec][key] === 'number' ? S.sections[sec][key] : pos;
+        var eff = toEff(sec, key, pos, def);
+        S.sections[sec][key] = eff;
+        var lab = document.getElementById('gyval-' + sec + '-' + key);
+        if (lab) lab.textContent = Math.round(eff) + ((typeof GY_UNIT !== 'undefined' && GY_UNIT[key]) || '');
+        if (key === 'length' && typeof propagateSectionChange === 'function') propagateSectionChange(sec, 'length', eff - prev);
+        if (typeof drawAdjustPreview === 'function') drawAdjustPreview();
+      };
+    });
+
+    /* --- 전체(All) 슬라이더 --- */
+    function avgOf(key, fn) {
+      var S = st(), sum = 0, n = 0, def = paramDef(key);
+      (typeof SECTION_ORDER !== 'undefined' ? SECTION_ORDER : Object.keys(S.sections)).forEach(function (sec) {
+        var v = S.sections[sec] && S.sections[sec][key];
+        if (typeof v === 'number' && isFinite(v)) { sum += fn(sec, v, def); n++; }
+      });
+      return n ? sum / n : 0;
+    }
+    function avgPos(key) { return avgOf(key, function (s, v, d) { return toPos(s, key, v, d); }); }
+    function avgEff(key) { return avgOf(key, function (s, v) { return v; }); }
+    var allDrag = null;
+
+    wrap('gyAllRangeCtrl', function (f) {
+      return function (key) {
+        var el = f.apply(this, arguments);
+        try {
+          var inp = el.querySelector('input[type=range]'), p = Math.round(avgPos(key));
+          if (inp) { inp.value = p; inp.dataset.start = String(p); }
+        } catch (e) {}
+        return el;
+      };
+    });
+    wrap('onGyAllSlider', function (f) {
+      return function (key, val, inp) {
+        if (!SB.on || !st()._styleBase) return f.apply(this, arguments);
+        var v = parseFloat(val);
+        if (!isFinite(v)) return;
+        var S = st(), def = paramDef(key);
+        if (!allDrag || allDrag.key !== key) {
+          allDrag = { key: key, start: parseFloat(inp && inp.dataset.start), base: {} };
+          if (!isFinite(allDrag.start)) allDrag.start = v;
+          (typeof SECTION_ORDER !== 'undefined' ? SECTION_ORDER : Object.keys(S.sections)).forEach(function (sec) {
+            var x = S.sections[sec] && S.sections[sec][key];
+            if (typeof x === 'number') allDrag.base[sec] = x;
+          });
+        }
+        var dlt = v - allDrag.start;
+        for (var sec in allDrag.base) {
+          S.sections[sec][key] = Math.round(clamp(allDrag.base[sec] + dlt, def.min, effMax(key, def)) * 1000) / 1000;
+        }
+        if (key === 'curl' && typeof gySyncGlobalCurl === 'function') gySyncGlobalCurl();
+        var lab = document.getElementById('gyallval-' + key);
+        if (lab) lab.textContent = Math.round(avgEff(key)) + (def.unit || '');
+        var rng = document.getElementById('gyallrng-' + key);
+        try { if (rng && typeof gyAllRangeText === 'function') rng.textContent = gyAllRangeText(key); } catch (e) {}
+        try { drawAdjustPreview(); } catch (e) {}
+      };
+    });
+    wrap('onGyAllSliderEnd', function (f) {
+      return function (key, inp) {
+        if (!SB.on || !st()._styleBase) return f.apply(this, arguments);
+        allDrag = null;
+        try { if (typeof _gyAllDrag !== 'undefined') _gyAllDrag = null; } catch (e) {}
+        var p = Math.round(avgPos(key)), def = paramDef(key);
+        if (inp) { inp.dataset.start = String(p); inp.value = p; }
+        var lab = document.getElementById('gyallval-' + key);
+        if (lab) lab.textContent = Math.round(avgEff(key)) + (def.unit || '');
+        try { SECTION_ORDER.forEach(function (s) { try { updateSectionSummary(s); } catch (e) {} }); } catch (e) {}
+      };
+    });
+
+    /* --- 3D 음영 --- */
+    wrap('buildAdjustedHair3DObject', function (f) {
+      return function () {
+        var obj = f.apply(this, arguments);
+        if (!SB.on) return obj;
+        try { return shadeHairObject(obj); } catch (e) { console.warn(TAG + ' 3D 음영 실패 — 원래 색 유지', e); return obj; }
+      };
+    });
+
+    console.log(TAG + ' 설치 완료 — 프로필 ' + Object.keys(SB.profiles).join(', ') + ' · 길이 상한 ' + SB.LEN_EXT + ' · 끄기 STYLE_BASE.on=false');
+  }
+
+  SB._shade = shadeHairObject;   // 점검용
+
+  SB.status = function () {
+    var S = st();
+    return {
+      on: SB.on, profile: SB.activeId, lenExt: SB.LEN_EXT,
+      base: S && S._styleBase ? clone(S._styleBase) : null,
+      neutralSig: sigOf(NEUTRAL_KEYS), builtNeutralSig: builtNeutralSig
+    };
+  };
+
+  /* 새 스타일 프로필 추가용:  STYLE_BASE.addProfile('spec_id', { config:{...}, rodScale, volBase, after, shade }) */
+  SB.addProfile = function (id, prof) {
+    SB.profiles[id] = prof;
+    snapshotDefaults();
+    return prof;
+  };
+
+  // 앞의 스크립트가 모두 동기 로드된 뒤라 바로 설치합니다(부트 코드가 원래 함수를 먼저 부르지 않도록).
+  install();
+})();
