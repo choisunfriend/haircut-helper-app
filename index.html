@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>결 GYEOL — 스타일 프리뷰</title>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=20260921f">
 </head>
 <body>
 <div id="app">
@@ -109,7 +109,10 @@
         <div id="devMini3D" style="display:none;">
           <div id="devMini3DHeader">
             <span>3D 미리보기</span>
-            <button id="devMini3DExpand" onclick="toggleDevMini3DExpand()" title="확대/축소">⛶</button>
+            <span class="mini3d-btns">
+              <button id="devMini3DExpand" onclick="toggleDevMini3DExpand()" title="확대/축소">⛶</button>
+              <button id="devMini3DClose" onclick="toggle3DAdjust()" title="미리보기 닫기">✕</button>
+            </span>
           </div>
           <div id="devMini3DCanvasWrap"></div>
           <div id="devMini3DLegend"></div>
@@ -130,7 +133,6 @@
             <div class="voice-hints">크라운·프론트·템플·사이드·후두부·네이프 + 길게·짧게·볼륨·컬</div>
           </div>
           <button class="btn btn-ghost" style="font-size:12px;padding:10px;" onclick="resetSections()">초기화</button>
-          <button class="btn btn-ghost" style="font-size:12px;padding:10px;" id="btn3dEngine" onclick="toggle3DAdjust()">3D 미리보기: ON</button>
           <button class="btn btn-primary" style="font-size:12px;padding:10px;" onclick="registerCurrentAsStyle()">★ 현재 모델을 스타일로 등록하기</button>
           <div style="height:4px;"></div>
         </div>
@@ -212,31 +214,34 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
 <script>let __visionModulePromise=null;function loadVisionModule(){return!__visionModulePromise&&(__visionModulePromise=import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9')),__visionModulePromise;}</script>
-<script src="js/01-face-landmarker.js"></script>
-<script src="js/02-state-sections.js"></script>
-<script src="js/03a-hair-mask.js"></script>
-<script src="js/03b-mask-memory.js"></script>
-<script src="js/04-structure-tensor.js"></script>
-<script src="js/05-capture-nav.js"></script>
-<script src="js/06-ui-panels.js"></script>
-<script src="js/07a-render-canvas.js"></script>
-<script src="js/07b-render-compare.js"></script>
-<script src="js/08-cut-engine.js"></script>
-<script src="js/09-strand-dye.js"></script>
-<script src="js/10-hair-render-2d.js"></script>
-<script src="js/11-result-screen.js"></script>
-<script src="js/12a-head-project.js"></script>
-<script src="js/12b-head-measure.js"></script>
-<script src="js/13a-outfit-pose.js"></script>
-<script src="js/13b-lift-fields.js"></script>
-<script src="js/13c-scalp-sections.js"></script>
-<script src="js/14-hair-3d-ops.js"></script>
-<script src="js/15-project-3d.js"></script>
-<script src="js/16-style-spec-diag.js"></script>
-<script src="js/17a-mannequin.js"></script>
-<script src="js/17b-cut3d-piece.js"></script>
-<script src="js/18-perf-i18n-boot.js"></script>
-<script src="js/19-stage-backdrop.js"></script>
-<script src="js/20-outfit-match.js"></script>
+<script src="js/01-face-landmarker.js?v=20260921f"></script>
+<script src="js/02-state-sections.js?v=20260921f"></script>
+<script src="js/03a-hair-mask.js?v=20260921f"></script>
+<script src="js/03b-mask-memory.js?v=20260921f"></script>
+<script src="js/04-structure-tensor.js?v=20260921f"></script>
+<script src="js/05-capture-nav.js?v=20260921f"></script>
+<script src="js/06-ui-panels.js?v=20260921f"></script>
+<script src="js/07a-render-canvas.js?v=20260921f"></script>
+<script src="js/07b-render-compare.js?v=20260921f"></script>
+<script src="js/08-cut-engine.js?v=20260921f"></script>
+<script src="js/09-strand-dye.js?v=20260921f"></script>
+<script src="js/10-hair-render-2d.js?v=20260921f"></script>
+<script src="js/11-result-screen.js?v=20260921f"></script>
+<script src="js/12a-head-project.js?v=20260921f"></script>
+<script src="js/12b-head-measure.js?v=20260921f"></script>
+<script src="js/13a-outfit-pose.js?v=20260921f"></script>
+<script src="js/13b-lift-fields.js?v=20260921f"></script>
+<script src="js/13c-scalp-sections.js?v=20260921f"></script>
+<script src="js/14-hair-3d-ops.js?v=20260921f"></script>
+<script src="js/15-project-3d.js?v=20260921f"></script>
+<script src="js/16-style-spec-diag.js?v=20260921f"></script>
+<script src="js/17a-mannequin.js?v=20260921f"></script>
+<script src="js/17b-cut3d-piece.js?v=20260921f"></script>
+<script src="js/14c-curl-bundle.js?v=20260921f"></script>
+<script src="js/18-perf-i18n-boot.js?v=20260921f"></script>
+<script src="js/19-stage-backdrop.js?v=20260921f"></script>
+<script src="js/20-outfit-match.js?v=20260921f"></script>
+<script src="js/22-ui-i18n-extra.js?v=20260921f"></script>
+<script src="js/23-section-all.js?v=20260921f"></script>
 </body>
 </html>
