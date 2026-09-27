@@ -5,9 +5,11 @@
  * 그러면 남은 시간이 어디로 가는지 <b>모르는 상태</b>이고, 모르는 채로 상수를
  * 흔드는 것은 이 파일이 반복해서 실패한 방식입니다. 그래서 두 가지를 합니다.
  *
- *   A. 재는 장치 — 무거운 함수의 누적 시간·호출수를 모아 순위표로 찍습니다.
- *      콘솔에서  GYEOL_PERF.report()
- *      첫 조정 진입·첫 3D 진입 뒤에 자동으로 한 번씩도 찍습니다.
+ *   A. 재는 장치 — 무거운 함수의 누적 시간·호출수를 모아 순위표로 냅니다.
+ *      나오는 자리는 <b>화면의 진단정보 패널</b>입니다(perfPanelLines에 이어 붙임).
+ *      폰에는 콘솔이 없고, 무엇보다 이 앱이 느린 곳은 저사양 폰이라
+ *      <b>느린 기계가 스스로 읽을 수 있어야</b> 재는 의미가 있습니다.
+ *      콘솔이 있는 환경이면 GYEOL_PERF.report()도 같은 표를 찍습니다.
  *      ⚠ 이건 고침이 아니라 <b>다음 고침을 어디에 할지 정하는 자</b>입니다.
  *
  *   B. 확인된 고침 — 스펙 풀이의 탐침 횟수 (하네스로 검증, 아래 수치 참조)
@@ -105,35 +107,75 @@
     P.memoHits = P.memoMiss = P.probesBefore = P.probesAfter = 0;
   };
 
-  P.report = function (label) {
+  /* 폭 좁은 폰 화면이라 이름을 22자로 자르고 막대는 14칸까지만 씁니다.
+     기기 정보를 같이 찍는 이유: 이 숫자는 <b>이 기계의 숫자</b>라서,
+     나중에 다른 기기 표와 나란히 놓으려면 어느 기계였는지가 붙어 있어야 합니다. */
+  P.lines = function () {
     var rows = [];
     for (var k in P.t) if (P.t[k].n) rows.push([k, P.t[k].ms, P.t[k].n]);
-    if (!rows.length) { console.log('[성능·순위] 아직 잡힌 게 없습니다'); return; }
+    var dev = '';
+    try {
+      dev = ' · 코어 ' + (navigator.hardwareConcurrency || '?') +
+        (navigator.deviceMemory ? ' · RAM ' + navigator.deviceMemory + 'GB' : '') +
+        (typeof isLowMemDevice === 'function' && isLowMemDevice() ? ' · 저사양판정' : '');
+    } catch (e) {}
+    var out = ['[성능·순위] 앱을 연 뒤 누적' + dev];
+    if (!rows.length) {
+      out.push('  아직 잡힌 게 없습니다 — 조정 화면을 한 번 거친 뒤 다시 열어보세요.');
+      return out;
+    }
     rows.sort(function (a, b) { return b[1] - a[1]; });
-    var total = rows[0][1];
-    var out = ['[성능·순위] ' + (label || '') + '  — 누적 ms(포함 시간) · 호출수 · 1회 평균'];
+    var top = rows[0][1];
+    out.push('  함수                   누적ms   호출   1회');
     rows.forEach(function (r) {
-      var bar = new Array(Math.max(1, Math.round(r[1] / total * 28)) + 1).join('█');
-      out.push('  ' + r[0].slice(0, 30).padEnd(30) + ' ' +
-        r[1].toFixed(0).padStart(7) + 'ms  ' +
-        String(r[2]).padStart(6) + '회  ' +
-        (r[1] / r[2]).toFixed(2).padStart(7) + 'ms  ' + bar);
+      var bar = new Array(Math.max(1, Math.round(r[1] / top * 14)) + 1).join('▇');
+      out.push('  ' + r[0].slice(0, 22).padEnd(22) +
+        r[1].toFixed(0).padStart(7) + '  ' +
+        String(r[2]).padStart(5) + '  ' +
+        (r[1] / r[2]).toFixed(1).padStart(6) + ' ' + bar);
     });
-    out.push('  ─ 읽는 법: 포함 시간이라 위가 아래를 품습니다.');
-    out.push('    adjustStrandGeom의 누적이 크면 <b>부르는 쪽의 횟수</b>를 줄일 자리고,');
-    out.push('    1회 평균이 크면 <b>그 함수 안</b>을 볼 자리입니다.');
+    out.push('  ─ 포함 시간입니다 — 위가 아래를 품습니다.');
+    out.push('    누적이 크면 <b>부르는 쪽 횟수</b>를, 1회가 크면 <b>그 함수 안</b>을 볼 자리입니다.');
     if (P.probesAfter) {
-      out.push('  ─ 스펙 풀이 탐침: 예전 규칙이면 ' + P.probesBefore + '회였을 것을 ' +
-        '<b>' + P.probesAfter + '회</b>로 찍었습니다' +
+      out.push('  ─ 스펙 풀이 탐침 ' + P.probesBefore + '회 → <b>' + P.probesAfter + '회</b>' +
         ' (' + Math.round((1 - P.probesAfter / Math.max(1, P.probesBefore)) * 100) + '% 감소)');
     }
     if (P.memoHits + P.memoMiss) {
-      out.push('  ─ 같은 측정 재사용: ' + P.memoHits + '적중 / ' + P.memoMiss + '재계산');
+      out.push('  ─ 같은 측정 재사용 ' + P.memoHits + '적중 / ' + P.memoMiss + '재계산');
     }
-    console.log(out.join('\n').replace(/<b>|<\/b>/g, ''));
+    return out;
   };
 
-  /* 첫 조정 진입·첫 3D 진입 뒤 자동 1회 — 사용자가 콘솔을 안 열어도 남습니다. */
+  P.report = function (label) {
+    console.log((label ? '[' + label + ']\n' : '') +
+      P.lines().join('\n').replace(/<b>|<\/b>/g, ''));
+  };
+
+  /* ── 순위표를 <b>진단정보 패널</b>로 보낸다 (필수) ────────────────────
+     처음에 이걸 console.log로만 냈는데, 사용자가 짚었습니다:
+     "지금 스마트폰으로 찍어서 콘솔로는 안 보이고" · "노트북은 훨씬 빨리 뜰 텐데
+     그래도 콘솔로 진단돼?"
+
+     둘 다 맞습니다. 그리고 두 번째가 더 중요합니다 — 노트북에서 재면
+     <b>다른 기계의 숫자</b>가 나올 뿐입니다. 저사양 폰에서 20초인 것이 노트북에서
+     2초면 그 순위표는 "여긴 안 느리다"만 말하고, 정작 폰에서 무엇이 오래
+     걸리는지는 못 말합니다. 재는 장치는 <b>느린 기계가 읽을 수 있는 자리</b>에
+     있어야 합니다. 이 앱에서 그 자리는 콘솔이 아니라 진단정보 패널입니다.
+
+     perfPanelLines()가 그 패널의 첫 블록이라 거기에 이어 붙입니다
+     (패널을 여는 쪽 toggleDiagInfo는 안 건드립니다 — 부르는 자리가 한 곳이라
+     여기만 감싸면 됩니다). */
+  (function toPanel() {
+    var orig = G.perfPanelLines;
+    if (typeof orig !== 'function') return;
+    G.perfPanelLines = function () {
+      var lines = orig.apply(this, arguments);
+      try { lines = lines.concat(P.lines()); } catch (e) { lines.push('  [성능·순위] 실패: ' + e); }
+      return lines;
+    };
+  })();
+
+  /* 첫 조정 진입·첫 3D 진입 뒤 자동 1회 — 콘솔이 있는 환경용 보조입니다. */
   (function autoReport() {
     var navOrig = G.navTo;
     if (typeof navOrig !== 'function') return;
@@ -246,6 +288,7 @@
     };
   }
 
-  console.log('[성능] 28-perf-probe 적용 — 스펙 풀이 탐침 9회→약 2.7회(하네스 41,580표본, 최대 차 1칸).' +
-    '\n    어디가 느린지 보려면 콘솔에 GYEOL_PERF.report() · 되돌리기 GYEOL_PERF.solver=false');
+  console.log('[성능] 28-perf-probe 적용 — 스펙 풀이 탐침 9회→약 2.6회(하네스 75,600표본, 참값 대비 최대 1칸).' +
+    '\n    어디가 느린지는 화면 왼쪽 <b>진단정보</b>를 누르면 맨 위 [성능·순위]에 나옵니다(폰에서 그대로 읽힙니다).' +
+    '\n    콘솔이 있으면 GYEOL_PERF.report() · 되돌리기 GYEOL_PERF.solver=false');
 })();
