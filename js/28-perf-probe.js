@@ -249,3 +249,206 @@
   console.log('[성능] 28-perf-probe 적용 — 스펙 풀이 탐침 9회→약 2.7회(하네스 41,580표본, 최대 차 1칸).' +
     '\n    어디가 느린지 보려면 콘솔에 GYEOL_PERF.report() · 되돌리기 GYEOL_PERF.solver=false');
 })();
+
+
+/* ── C. 스타일 적용 빠르게 + [시간] 진단 줄 (예전 29번 파일 내용) ── */
+/* ==========================================================================
+ * 29-style-apply-fast.js — 스타일 적용 대기(~10초) 줄이기 + [시간] 진단 줄
+ *
+ * 원인(코드 추적으로 확인): applyStyleSpec()이 섹션 길이를 푼 "뒤에"
+ * 진단 전용 계산을 매번 같이 돌립니다. 진단 패널을 열든 안 열든 돕니다.
+ *   ① diagCrownCoverage  → computeAdjustedHair3DStrands(null, 1)
+ *      stride 1 = 모델 전체(약 22,000가닥)를 조정 계산. 화면 렌더는 약 5,000가닥만 씀.
+ *      stride가 달라 ADJ_CACHE도 못 탐 → 순수 추가 비용.
+ *   ② reportSilhouette   → measureSilhouette × 4뷰 (stride 3 ≈ 7,500가닥 조정 + 뷰마다 투영·가림 판정)
+ *   ③ 뷰별 길이 재풀이   → 섹션마다 front/left/right/back 4번 더 풂(메인 풀이의 최대 4배).
+ *      결과(byView·좌우차)는 진단 패널 글자로만 쓰이고 렌더에는 안 쓰임.
+ *   ④ diagRoundTrip · logCurlScale → 로그 전용.
+ *
+ * 고침: 적용 중에는 ①~④를 건너뛰고, 진단 패널을 열 때 한 번 계산해서 채웁니다.
+ *       (그림은 전혀 바뀌지 않습니다 — 렌더가 읽는 값은 하나도 건드리지 않음)
+ *
+ * [시간] 줄: 진단 패널 맨 위에 단계별 ms가 찍힙니다.
+ *   3D준비(buildNeutralHair3D) · 길이풀이(applyStyleSpec) · 첫렌더(renderAdjustFrame)
+ *   · 미니3D · 합계(조정 화면 진입 → 스타일 적용 후 첫 그림 끝) · 미룬 진단
+ *
+ * 끄기: STYLE_FAST.on = false (예전처럼 적용 때 진단까지 전부 계산)
+ * ======================================================================== */
+(function () {
+  'use strict';
+  var G = window;
+  var F = G.STYLE_FAST = {
+    on: true,
+    t: {},            // 마지막 적용의 단계별 ms
+    skipped: 0,       // 적용 중 건너뛴 뷰별 풀이 수
+    pending: null     // 패널 열 때 채울 진단 {id}
+  };
+  function now() { try { return performance.now(); } catch (e) { return Date.now(); } }
+  var inApply = false;
+
+  /* ── 시간 재기 ─────────────────────────────────────────────────────── */
+  var navAt = 0, applyAt = 0, waitRender = false;
+
+  var navOrig = G.navTo;
+  if (typeof navOrig === 'function') {
+    G.navTo = function (screen) {
+      if (screen === 'adjust' && state && state.pendingSpecId) { navAt = now(); F.t = {}; }
+      return navOrig.apply(this, arguments);
+    };
+  }
+
+  var nOrig = G.buildNeutralHair3D;
+  if (typeof nOrig === 'function') {
+    G.buildNeutralHair3D = function (cb) {
+      var t0 = now();
+      return nOrig.call(this, function () {
+        F.t.neutral3D = (F.t.neutral3D || 0) + (now() - t0);
+        if (cb) return cb.apply(this, arguments);
+      });
+    };
+  }
+
+  var asrOrig = G.applyStyleSpecAndRender;
+  if (typeof asrOrig === 'function') {
+    G.applyStyleSpecAndRender = function (id, retry) {
+      if (!retry) { applyAt = now(); if (!navAt) F.t = {}; }
+      var r = asrOrig.apply(this, arguments);
+      if (r) waitRender = true;   // 적용됨 → 다음 renderAdjustFrame이 첫 그림
+      return r;
+    };
+  }
+
+  var specOrig = G.applyStyleSpec;
+  if (typeof specOrig === 'function') {
+    G.applyStyleSpec = function (id) {
+      var t0 = now();
+      inApply = true; F.skipped = 0;
+      try {
+        var rep = specOrig.apply(this, arguments);
+        if (rep && F.on) F.pending = { id: id };
+        return rep;
+      } finally {
+        inApply = false;
+        F.t.solve = now() - t0;
+      }
+    };
+  }
+
+  var rafOrig = G.renderAdjustFrame;
+  if (typeof rafOrig === 'function') {
+    G.renderAdjustFrame = function () {
+      if (!waitRender) return rafOrig.apply(this, arguments);
+      var t0 = now();
+      try { return rafOrig.apply(this, arguments); }
+      finally {
+        waitRender = false;
+        var t1 = now();
+        F.t.render = t1 - t0;
+        F.t.total = t1 - (navAt || applyAt);
+        navAt = 0;
+      }
+    };
+  }
+
+  var miniOrig = G.refreshDevMini3D;
+  if (typeof miniOrig === 'function') {
+    G.refreshDevMini3D = function () {
+      var t0 = now();
+      try { return miniOrig.apply(this, arguments); }
+      finally { var d = now() - t0; if (d > 1) F.t.mini3D = d; }
+    };
+  }
+
+  /* ── 적용 중 진단 건너뛰기 ─────────────────────────────────────────── */
+  function deferIn(name) {
+    var f = G[name];
+    if (typeof f !== 'function') return null;
+    G[name] = function () {
+      if (F.on && inApply) return null;
+      return f.apply(this, arguments);
+    };
+    return f;
+  }
+  var oSil = deferIn('reportSilhouette');
+  var oCrown = deferIn('diagCrownCoverage');
+  var oRound = deferIn('diagRoundTrip');
+  var oCurl = deferIn('logCurlScale');
+
+  // ③ 뷰별 재풀이: 적용 중 view 인자가 있는 호출만 null → 원본 루프가 continue
+  function skipView(name) {
+    var f = G[name];
+    if (typeof f !== 'function') return null;
+    G[name] = function (sec, target, side) {
+      if (F.on && inApply && side) { F.skipped++; return null; }
+      return f.apply(this, arguments);
+    };
+    return f;
+  }
+  var oTip = skipView('solveSectionLengthForTipY');
+  var oCm = skipView('solveSectionLengthForCm');
+
+  /* ── 패널 열 때 미룬 진단 채우기 (원본 applyStyleSpec과 같은 규칙) ── */
+  function runDeferred() {
+    var P = F.pending;
+    if (!P) return;
+    F.pending = null;
+    var L = state._lastSpec;
+    if (!L || L.id !== P.id || !L.rep) return;
+    var rep = L.rep, t0 = now();
+    try {
+      var spec = G.getStyleSpec ? G.getStyleSpec(P.id) : null;
+      var hh = G.headHeightRef ? G.headHeightRef() : null;
+      if (spec && hh && oTip && oCm) {
+        var disc = spec.fade && spec.fade.disc > 0 ? hh.yTop - spec.fade.disc / 100 * hh.H : null;
+        var above = (typeof FADE_SOLVE_ABOVE_LINE !== 'undefined') ? FADE_SOLVE_ABOVE_LINE : {};
+        rep.byView = {};
+        for (var sec in rep.solved) {
+          var base = rep.solved[sec];
+          if (base == null) continue;
+          var isCm = rep.unit[sec] === 'cm';
+          var minRoot = isCm && disc != null && above[sec] ? disc : undefined;
+          var tipY = isCm ? null : hh.yTop - spec.tipAt[sec] * hh.H;
+          ANGLES.forEach(function (v) {
+            var pool = G.solvePoolFor(sec, v);
+            if (!pool || pool.length < 8) return;
+            var len = isCm ? oCm(sec, spec.lenCm[sec], v, minRoot) : oTip(sec, tipY, v);
+            if (len == null) return;
+            (rep.byView[v] || (rep.byView[v] = {}))[sec] = { length: len, n: pool.length, d: len - base };
+          });
+        }
+        rep.asym = {};
+        for (var s2 in rep.solved) {
+          var a = rep.byView.left && rep.byView.left[s2], b = rep.byView.right && rep.byView.right[s2];
+          if (a && b) rep.asym[s2] = a.length - b.length;
+        }
+      }
+    } catch (e) { console.warn('[스타일 빠르게] 뷰별 풀이 실패', e); }
+    try { _curlScaleLogged = false; } catch (e) {}
+    try { if (oCurl) oCurl(); } catch (e) {}
+    try { if (oSil) rep.silhouette = oSil(P.id); } catch (e) {}
+    try { if (oCrown) rep.crown = oCrown(); } catch (e) {}
+    try { if (oRound) rep.roundTrip = oRound(); } catch (e) {}
+    F.t.diag = now() - t0;
+  }
+
+  function ms(v) { return v == null ? '—' : Math.round(v) + 'ms'; }
+  function timingLine() {
+    var t = F.t;
+    return '[시간] 3D준비 ' + ms(t.neutral3D) + ' · 길이풀이 ' + ms(t.solve) +
+      ' · 첫렌더 ' + ms(t.render) + ' · 미니3D ' + ms(t.mini3D) +
+      ' · 합계 ' + ms(t.total) +
+      (F.on ? ' · 미룬 진단 ' + ms(t.diag) + ' (뷰별 풀이 ' + F.skipped + '회 건너뜀)' : ' · (STYLE_FAST 꺼짐)');
+  }
+
+  var perfOrig = G.perfPanelLines;
+  if (typeof perfOrig === 'function') {
+    G.perfPanelLines = function () {
+      runDeferred();
+      var lines = perfOrig.apply(this, arguments) || [];
+      return [timingLine()].concat(lines);
+    };
+  }
+
+  G.STYLE_FAST.line = timingLine;
+  console.log('[성능] 28-perf-probe(C) 적용 — 스타일 적용 때 진단 계산(전체 가닥 조정·실루엣 4뷰·뷰별 재풀이)을 진단 패널 열 때로 미룸. 끄기 STYLE_FAST.on=false');
+})();
