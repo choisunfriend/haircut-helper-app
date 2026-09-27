@@ -521,10 +521,43 @@
      * 0.048 · 70°에서 0.019(앞이마 0.061)가 남아 있었습니다 → 뒷머리 가운데가 좌우로 갈라져 두피가 한 줄로 보임.
      * (Seams 색칠로 확인: 갈라진 줄은 사진 경계가 아니라 후면 사진 한가운데였음)
      * 뿌리의 앞뒤 위치(z/c)로 약하게 합니다: 정수리보다 조금 앞(+0.15c)까지 100%, 정수리 뒤 -0.15c에서 0. */
+    /* 가르마를 옆으로 옮기면 앞머리도 가르마 반대쪽으로 넘어가게
+     * 원래 가르마 힘은 가르마 선 근처(가우시안 폭 0.35rad)에서만 세서, 가르마를 옆으로 옮기면
+     * 얼굴 앞 가운데 가닥은 선에서 멀어 힘을 거의 못 받고 그대로 얼굴 위로 떨어졌습니다.
+     * 앞·정수리(뿌리 z가 앞쪽) 가닥에는 가르마 선에서 먼 쪽으로 넘기는 힘을 바닥값으로 깝니다.
+     * 가운데 가르마(0)에서는 아무것도 안 바꿉니다. 끄기 STYLE_BASE.partSideSweep=false */
+    SB.partSideSweep = true; SB.partSideK = 0.9;
+    function partSideSweep(v, root, partVal, curlAmt, partAmt) {
+      if (!SB.partSideSweep || !root || !partVal || typeof PART3D === 'undefined') return v;
+      var E; try { E = getHeadEllipsoid(); } catch (e) { return v; }
+      if (!E) return v;
+      var pa = clamp(typeof partAmt === 'number' ? partAmt : 0, 0, 100) / 100;
+      if (!(pa > 0)) return v;
+      var amt = Math.pow(pa, PART3D.GAMMA || 1);
+      var x = root.x, y = root.y - 0.15, z = root.z;
+      var ux = x / E.a, uy = y / E.b, uz = z / E.c, ul = Math.sqrt(ux * ux + uy * uy + uz * uz) || 1;
+      ux /= ul; uy /= ul; uz /= ul;
+      var fz = clamp((uz + 0.05) / 0.45, 0, 1); fz = fz * fz * (3 - 2 * fz);            // 앞쪽일수록 1
+      var top = clamp((uy + 0.1) / 0.4, 0, 1);                                            // 귀 아래는 0
+      var w = fz * top; if (!(w > 0)) return v;
+      var off = clamp((-partVal / 100) * (PART3D.MAXOFF || 0.65), -0.98, 0.98);
+      var d = ux - off, side = d >= 0 ? 1 : -1;
+      var near = clamp(Math.abs(d) / 0.12, 0, 1);                                         // 선 바로 위는 원래 힘에 맡김
+      var amp = PART3D.AMP * amt * w * near * SB.partSideK * (1 - 0.5 * clamp(curlAmt || 0, 0, 100) / 100);
+      if (!(amp > 1e-6)) return v;
+      var nx = x / (E.a * E.a), ny = y / (E.b * E.b), nz = z / (E.c * E.c), nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      nx /= nl; ny /= nl; nz /= nl;
+      var dot = side * nx;
+      var s = { x: (side - dot * nx) * amp, y: (-dot * ny) * amp, z: (-dot * nz) * amp };
+      if (!v) return s;
+      var mv = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z), ms = Math.sqrt(s.x * s.x + s.y * s.y + s.z * s.z);
+      return ms > mv ? s : v;
+    }
     SB.partFrontOnly = true;
     wrap('partingPushHead', function (f) {
-      return function (root) {
+      return function (root, partVal, curlAmt, partAmt) {
         var v = f.apply(this, arguments);
+        v = partSideSweep(v, root, partVal, curlAmt, partAmt);
         if (!v || !SB.partFrontOnly || !root) return v;
         var c = 1; try { c = getHeadEllipsoid().c || 1; } catch (e) {}
         var zn = root.z / c, lo = -0.15, hi = 0.15;
