@@ -157,6 +157,27 @@
   }
   HP.showSeams = showSeams;
 
+  /* 진단: 뿌리 점만 보기 ("Roots") — 갈라진 줄에 뿌리가 없는지(심기 문제), 뿌리는 있는데 가닥이 벌어지는지(흐름 문제) 구분 */
+  HP.roots = false;
+  function showRoots() {
+    if (typeof model3D === 'undefined' || !model3D || !model3D.headGroup) return;
+    removeByName(model3D.headGroup, 'rootView');
+    var hair = model3D.headGroup.getObjectByName('adjustedHair');
+    if (!HP.roots || !hair) return;
+    var M = state.hair3Dneutral;
+    if (!M || !M.strands) return;
+    var P = [];
+    for (var k = 0; k < M.strands.length; k++) { var q = M.strands[k].pts && M.strands[k].pts[0]; if (q) P.push(q.x, q.y, q.z); }
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    var o = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffe14a, size: 2.5, sizeAttenuation: false, depthTest: true }));
+    o.name = 'rootView';
+    o.position.copy(hair.position); o.rotation.copy(hair.rotation); o.scale.copy(hair.scale);
+    hair.parent.add(o);
+    hair.visible = false;
+  }
+  HP.showRoots = showRoots;
+
 
   /* ── 3D 화면 UI: 핀 고르기 + 좌/우 ─────────────────────────────────── */
   function buildUI() {
@@ -183,6 +204,7 @@
       });
       if (HP.id !== 'none') bar.appendChild(chip(HP.side > 0 ? 'Side ◐' : 'Side ◑', false, function () { HP.side = -HP.side; render(); placePin(); }));
       bar.appendChild(chip(HP.seams ? 'Seams ✓' : 'Seams', HP.seams, function () { HP.seams = !HP.seams; render(); showSeams(); }));
+      bar.appendChild(chip(HP.roots ? 'Roots ✓' : 'Roots', HP.roots, function () { HP.roots = !HP.roots; render(); showSeams(); showRoots(); }));
     }
     render();
     vp.appendChild(bar);
