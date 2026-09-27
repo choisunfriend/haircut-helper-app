@@ -78,7 +78,13 @@
     return true;
   }
 
-  /* 무거울 만한 자리 — 이름이 없으면 조용히 건너뜁니다(모듈 구성이 바뀌어도 안 깨짐). */
+  /* 무거울 만한 자리 — 이름이 없으면 조용히 건너뜁니다(모듈 구성이 바뀌어도 안 깨짐).
+     ⚠ <b>async 함수는 첫 await까지만</b> 잡힙니다(래퍼의 finally가 프라미스를
+       돌려주는 시점에 돕니다). 그래서 setupModel3DScreen·extractHairMask·
+       buildNeutralHair3D가 실제보다 작게 나옵니다 — 그 줄은 "이 함수가 빠르다"가
+       아니라 "여기서는 못 잰다"로 읽어야 합니다. 동기 함수(adjustStrandGeom,
+       computeAdjustedHair3DStrands, applyStyleSpec, buildAdjustedHair3DObject,
+       renderFrame)의 숫자는 그대로 믿어도 됩니다. */
   [
     'buildNeutralHair3D',        // 중립 3D 모델 생성 — 첫 진입의 큰 덩어리
     'captureStrandPathsFor',     // 사진 한 장에서 가닥 경로 뜨기(뷰마다)
@@ -288,7 +294,58 @@
     };
   }
 
+  /* ── C. 실루엣 측정을 <b>패널을 열 때</b>로 미룬다 (2026-09-27 · 폰 실측) ───
+     저사양 폰(코어 8 · RAM 4GB · 저사양판정) 진단정보 순위표:
+       applyStyleSpec          7434ms /     1회
+       adjustStrandGeom        5957ms / 87451회
+       computeAdjustedHair3DS  5179ms /    17회
+       measureSectionTipY      1607ms /   146회
+     applyStyleSpec 7.4초 중 길이 역산은 <b>1.6초뿐</b>입니다. 나머지 5.8초는
+     끝에서 부르는 reportSilhouette입니다 — ANGLES 네 뷰를 돌며 뷰마다
+     measureSilhouette → <b>computeAdjustedHair3DStrands를 통째로</b> 다시 돌립니다.
+     스펙이 섹션 길이를 막 바꾼 직후라 ADJ_CACHE가 전부 빗나가고, 네 번 모두
+     20,000가닥대를 새로 계산합니다. 그게 adjustStrandGeom 87,451회의 큰 몫입니다.
+
+     그런데 이 측정의 <b>소비처는 specPanelLines 하나</b>입니다 — 진단정보 패널의
+     "실루엣 W/H · 요철 · 비침덩어리" 줄. 화면에 그리는 데에는 한 글자도 안 씁니다.
+     27번이 RENDER_MATCH를 끈 것과 같은 종류입니다: <b>진단이 진단 대상을
+     느리게 만들고 있었습니다</b>.
+
+     지우지는 않습니다 — 스타일을 레퍼런스와 맞출 때 필요한 자입니다. 대신
+     <b>패널을 열 때 그 자리에서</b> 잽니다. 그러면 첫 진입에서는 0초이고,
+     숫자가 필요한 사람은 진단정보를 눌러 그대로 봅니다(같은 모델·같은 자).
+     ⚠ 패널을 열면 그때 5초쯤 걸립니다. 그게 맞는 거래입니다 — 첫 진입은
+       손님이 기다리는 시간이고, 진단정보는 만드는 사람이 여는 것입니다.
+     끄기: GYEOL_PERF.lazySilhouette = false (예전처럼 적용 즉시 잽니다) */
+  P.lazySilhouette = true;
+  (function deferSilhouette() {
+    var rep = G.reportSilhouette;
+    if (typeof rep !== 'function') return;
+    var pending = null;            // 아직 안 잰 스펙 id
+    G.reportSilhouette = function (id) {
+      if (!P.lazySilhouette) return rep.apply(this, arguments);
+      pending = (id == null) ? '' : id;
+      return null;                 // applyStyleSpec은 null을 이미 다루고 있다
+    };
+    var panel = G.specPanelLines;
+    if (typeof panel !== 'function') return;
+    G.specPanelLines = function () {
+      if (P.lazySilhouette && pending !== null) {
+        var id = pending; pending = null;
+        try {
+          var t0 = now();
+          var v = rep(id);
+          if (state._lastSpec) state._lastSpec.rep.silhouette = v;
+          (P.t.reportSilhouette || (P.t.reportSilhouette = { ms: 0, n: 0 })).ms += now() - t0;
+          P.t.reportSilhouette.n++;
+        } catch (e) { console.warn('[실루엣] 지연 측정 실패:', e); }
+      }
+      return panel.apply(this, arguments);
+    };
+  })();
+
   console.log('[성능] 28-perf-probe 적용 — 스펙 풀이 탐침 9회→약 2.6회(하네스 75,600표본, 참값 대비 최대 1칸).' +
     '\n    어디가 느린지는 화면 왼쪽 <b>진단정보</b>를 누르면 맨 위 [성능·순위]에 나옵니다(폰에서 그대로 읽힙니다).' +
+    '\n    실루엣 측정은 진단정보를 열 때로 미뤘습니다(GYEOL_PERF.lazySilhouette=false로 원복).' +
     '\n    콘솔이 있으면 GYEOL_PERF.report() · 되돌리기 GYEOL_PERF.solver=false');
 })();
