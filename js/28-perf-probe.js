@@ -481,7 +481,7 @@
   // 3D준비 내부 (조정 화면·3D 화면 둘 다에서 불림)
   var nb = G.buildNeutralHair3D;
   if (typeof nb === 'function') {
-    G.buildNeutralHair3D = function (cb) { T.prep = {}; var t0 = now();
+    G.buildNeutralHair3D = function (cb) { var joining = typeof NEUTRAL_BUILD !== 'undefined' && NEUTRAL_BUILD.running; if (!joining) T.prep = {}; var t0 = T.prep._t0 = joining && T.prep._t0 ? T.prep._t0 : now();
       return nb.call(this, function () { T.prep.total = now() - t0; if (cb) return cb.apply(this, arguments); }); };
   }
   timeIt('captureStrandPathsFor', 'prep', function (a) { return '경로·' + a[0]; });
@@ -494,15 +494,29 @@
   }
   timeIt('loadHeadMesh', 'scr', function () { return '두상'; });
   timeIt('buildAdjustedHair3DObject', 'scr', function () { return '헤어객체'; });
+  // 헤어객체 안쪽: 가닥 조정 계산(곱슬 포함) · 3D 음영(24번)
+  var inHair = false, ho = G.buildAdjustedHair3DObject;
+  G.buildAdjustedHair3DObject = function () { inHair = true; try { return ho.apply(this, arguments); } finally { inHair = false; } };
+  var ca = G.computeAdjustedHair3DStrands;
+  if (typeof ca === 'function') G.computeAdjustedHair3DStrands = function () {
+    if (!inHair) return ca.apply(this, arguments);
+    var t0 = now(), r = ca.apply(this, arguments);
+    T.scr['└가닥계산'] = (T.scr['└가닥계산'] || 0) + (now() - t0);
+    if (r) { var pts = 0; for (var i = 0; i < r.length; i++) pts += (r[i].pts ? r[i].pts.length : 0);
+      T.scr['└가닥수'] = r.length; T.scr['└점수'] = pts; }
+    return r;
+  };
   timeIt('recommendOutfitWithAI', 'scr', function () { return '의상추천'; });
   timeIt('loadOutfitMeshMeasured', 'scr', function () { return '의상로딩'; });
   timeIt('buildRealFaceMesh', 'scr', function () { return '얼굴메쉬(합계 밖)'; });
 
-  function fmt(o) { var a = []; for (var k in o) if (k !== 'total') a.push(k + ' ' + Math.round(o[k]) + 'ms'); return a.length ? a.join(' · ') : '아직 없음'; }
+  function fmt(o) { var a = []; for (var k in o) if (k !== 'total' && k !== '_t0') a.push(k + ' ' + Math.round(o[k]) + (/수$/.test(k) ? '' : 'ms')); return a.length ? a.join(' · ') : '아직 없음'; }
   var pl = G.perfPanelLines;
   G.perfPanelLines = function () {
     var lines = pl.apply(this, arguments) || [];
-    var p = '[시간·3D준비] ' + (T.prep.total != null ? '전체 ' + Math.round(T.prep.total) + 'ms · ' : '') + fmt(T.prep);
+    var sum = 0; for (var k in T.prep) if (k !== 'total' && k !== '_t0') sum += T.prep[k];
+    var p = '[시간·3D준비] ' + (T.prep.total != null ? '전체 ' + Math.round(T.prep.total) + 'ms · ' : '') + fmt(T.prep) +
+      (T.prep.total != null ? ' · 틈(사이에 끼어든 다른 작업) ' + Math.round(Math.max(0, T.prep.total - sum)) + 'ms' : '');
     var s = '[시간·3D화면] ' + fmt(T.scr);
     return [lines[0], p, s].concat(lines.slice(1));
   };
