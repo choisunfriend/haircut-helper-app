@@ -526,7 +526,7 @@
      * 얼굴 앞 가운데 가닥은 선에서 멀어 힘을 거의 못 받고 그대로 얼굴 위로 떨어졌습니다.
      * 앞·정수리(뿌리 z가 앞쪽) 가닥에는 가르마 선에서 먼 쪽으로 넘기는 힘을 바닥값으로 깝니다.
      * 가운데 가르마(0)에서는 아무것도 안 바꿉니다. 끄기 STYLE_BASE.partSideSweep=false */
-    SB.partSideSweep = true; SB.partSideK = 0.9;
+    SB.partSideSweep = false; SB.partSideK = 0.9;
     function partSideSweep(v, root, partVal, curlAmt, partAmt) {
       if (!SB.partSideSweep || !root || !partVal || typeof PART3D === 'undefined') return v;
       var E; try { E = getHeadEllipsoid(); } catch (e) { return v; }
@@ -553,7 +553,7 @@
       var mv = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z), ms = Math.sqrt(s.x * s.x + s.y * s.y + s.z * s.z);
       return ms > mv ? s : v;
     }
-    SB.partFrontOnly = true;
+    SB.partFrontOnly = false;
     wrap('partingPushHead', function (f) {
       return function (root, partVal, curlAmt, partAmt) {
         var v = f.apply(this, arguments);
