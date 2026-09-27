@@ -913,30 +913,41 @@
   'use strict';
   var G = window, SB = G.STYLE_BASE || {};
   SB.fillPartGap = true;
-  var GAP = 5;
+  var GAP = 6;
   var orig = G.buildMannequinHair3D;
   if (typeof orig !== 'function') return;
   G.buildMannequinHair3D = function () {
     var M = state && (state._hair3Dneutral || state.hair3D), R = M && M.roots;
     if (!SB.fillPartGap || !R || !R.ok || !R.den || !R.NT || !R.NP) return orig.apply(this, arguments);
-    var NT = R.NT, NP = R.NP, den = R.den, bald = (typeof MANNEQUIN !== 'undefined' ? MANNEQUIN.baldDen : 0.08);
-    var off = (typeof EST_OFFSCALP !== 'undefined' && R.est) ? function (i) { return R.est[i] === EST_OFFSCALP; } : function () { return false; };
-    var saved = den.slice ? den.slice() : Array.prototype.slice.call(den), filled = 0;
+    var NT = R.NT, NP = R.NP, den = R.den, est = R.est, bald = (typeof MANNEQUIN !== 'undefined' ? MANNEQUIN.baldDen : 0.08);
+    var OFF = (typeof EST_OFFSCALP !== 'undefined') ? EST_OFFSCALP : null;
+    var isOff = function (a, i) { return OFF !== null && a && a[i] === OFF; };
+    var saved = Array.prototype.slice.call(den), savedEst = est ? Array.prototype.slice.call(est) : null;
+    var hair = function (j) { return !isOff(savedEst, j) && saved[j] > bald; };
+    var filledLow = 0, filledOff = 0;
+    // 이마 쪽(앞) 헤어라인의 파인 홈은 "두피 밖"으로 판정돼 있었음(로그: 정면 phi0.95~1.05 두피밖 12칸, 밀도0은 5칸뿐)
+    // → 같은 가로줄에서 양옆이 머리인 좁은 칸은 두피 밖이어도 두피로 되돌려 심음. 위쪽 절반(phi<1.1)만.
+    var phiMax = 1.1;
     for (var ip = 0; ip < NP; ip++) {
-      var row = ip * NT;
+      var phi = (ip + 0.5) / NP * Math.PI, row = ip * NT;
       for (var it = 0; it < NT; it++) {
         var i = row + it;
-        if (den[i] > bald || off(i)) continue;
+        if (hair(i)) continue;
+        var off = isOff(savedEst, i);
+        if (off && phi > phiMax) continue;
         var L = 0, Ld = 0, Rt = 0, Rd = 0;
-        for (var k = 1; k <= GAP; k++) { var j = row + (it - k + NT) % NT; if (off(j)) break; if (saved[j] > bald) { L = k; Ld = saved[j]; break; } }
-        for (var k2 = 1; k2 <= GAP; k2++) { var j2 = row + (it + k2) % NT; if (off(j2)) break; if (saved[j2] > bald) { Rt = k2; Rd = saved[j2]; break; } }
-        if (L && Rt && L + Rt - 1 <= GAP) { den[i] = (Ld + Rd) / 2; filled++; }
+        for (var k = 1; k <= GAP; k++) { var j = row + (it - k + NT) % NT; if (hair(j)) { L = k; Ld = saved[j]; break; } }
+        for (var k2 = 1; k2 <= GAP; k2++) { var j2 = row + (it + k2) % NT; if (hair(j2)) { Rt = k2; Rd = saved[j2]; break; } }
+        if (!(L && Rt && L + Rt - 1 <= GAP)) continue;
+        den[i] = (Ld + Rd) / 2;
+        if (off) { est[i] = savedEst[row + (it - L + NT) % NT]; filledOff++; } else filledLow++;
       }
     }
     try { return orig.apply(this, arguments); }
     finally {
       for (var q = 0; q < saved.length; q++) den[q] = saved[q];
-      if (filled) console.log('[가르마 뿌리 메우기] 좁은 빈 칸 ' + filled + '개를 양옆 밀도로 채워 심음');
+      if (savedEst) for (var q2 = 0; q2 < savedEst.length; q2++) est[q2] = savedEst[q2];
+      console.log('[가르마 뿌리 메우기] 좁은 빈 칸 채움 — 밀도 낮음 ' + filledLow + '칸 · 두피밖 판정 ' + filledOff + '칸 (끄기 STYLE_BASE.fillPartGap=false)');
     }
   };
 })();

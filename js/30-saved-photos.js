@@ -135,8 +135,8 @@
     box.id = 'savedPhotoRow';
     box.style.cssText = 'display:flex;gap:6px;margin-top:6px;';
     box.innerHTML =
-      '<button type="button" class="btn btn-ghost" id="useSavedBtn" style="flex:3;font-size:12px;padding:9px 8px;">Use saved photos</button>' +
-      '<button type="button" class="btn btn-ghost" id="delSavedBtn" style="flex:1;font-size:11px;padding:9px 6px;opacity:.75;">Delete saved</button>';
+      '<button type="button" class="btn" id="useSavedBtn" style="flex:3;font-size:12px;padding:9px 8px;font-weight:700;background:rgba(212,146,74,.14);color:#E8B77C;border:1.5px solid #D4924A;border-radius:10px;">📁 Use saved photos</button>' +
+      '<button type="button" class="btn" id="delSavedBtn" style="flex:1;font-size:11px;padding:9px 6px;background:rgba(200,70,70,.10);color:#E08A8A;border:1px solid rgba(224,138,138,.55);border-radius:10px;">Delete saved</button>';
     row.parentNode.insertBefore(box, row.nextSibling);
     document.getElementById('useSavedBtn').onclick = loadSaved;
     document.getElementById('delSavedBtn').onclick = function () {
