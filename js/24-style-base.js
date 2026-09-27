@@ -256,7 +256,7 @@
     var yEnd = measureSectionTipY(sec, SB.LEN_EXT);
     if (yEnd == null) return null;
     var lo = 0, hi = SB.LEN_EXT;
-    for (var i = 0; i < 16; i++) {
+    for (var i = 0; i < 9; i++) {   // 200/2^9 < 0.5 — 정수 올림이라 이걸로 충분 (예전 16)
       var mid = (lo + hi) / 2, y = measureSectionTipY(sec, mid);
       if (y == null) return null;
       if (Math.abs(y - yEnd) <= eps) hi = mid; else lo = mid;
@@ -284,7 +284,7 @@
         best = sat;                                   // 끝까지 가도 목표에 못 닿음 → 닿을 수 있는 최대
       } else {
         var lo = 0, hi = sat;                         // 포화점 안쪽에서 목표를 찾음
-        for (var i = 0; i < 18; i++) {
+        for (var i = 0; i < 9; i++) {   // 예전 18 — 결과를 정수로 반올림하므로 9회면 같은 답
           var mid = (lo + hi) / 2, y = measureSectionTipY(sec, mid);
           if (y == null) break;
           if (y > target) lo = mid; else hi = mid;
