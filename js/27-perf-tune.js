@@ -64,4 +64,42 @@
 
   // ③ 진단 전용 비교 끄기 (필요하면 콘솔에서 RENDER_MATCH.on = true)
   try { if (typeof RENDER_MATCH !== 'undefined') RENDER_MATCH.on = false; } catch (e) {}
+
+  // ④ 스타일 적용 전에 화면을 먼저 한 번 그리게 양보
+  //    3D 모델이 이미 있으면 원본은 곧바로 무거운 계산에 들어가 '3D 준비 중…'도 못 띄우고 화면이 멈춘 것처럼 보였습니다
+  //    (새로 시작 뒤 이전 손님 그림·진단이 그대로 남아 보이던 현상). 계산 내용은 그대로, 순서만 바꿉니다.
+  var origApply = G.applyStyleSpecAndRender;
+  if (typeof origApply === 'function') {
+    var pendingId = null;
+    G.applyStyleSpecAndRender = function (id, retry) {
+      var S = (typeof state !== 'undefined') ? state : null;
+      if (!PERF_TUNE.on || retry || !S || S.specAppliedId === id || !S.hair3Dneutral) return origApply.apply(this, arguments);
+      var tag = document.getElementById('adjustStyleTag');
+      if (tag) tag.textContent = (typeof uiLang !== 'undefined' && uiLang !== 'ko') ? 'Preparing 3D…' : '3D 준비 중…';
+      pendingId = id;
+      var self = this, args = arguments;
+      requestAnimationFrame(function () { setTimeout(function () {
+        if (pendingId !== id) return;             // 그 사이 다른 스타일을 눌렀으면 마지막 것만
+        pendingId = null;
+        origApply.apply(self, args);
+      }, 0); });
+      return null;
+    };
+  }
+
+  // ⑤ 새로 시작: 이전 손님의 조정 화면 그림·진단 글이 남지 않게 비우기
+  var origNew = G.startNewCustomer;
+  if (typeof origNew === 'function') {
+    G.startNewCustomer = function () {
+      var r = origNew.apply(this, arguments);
+      try {
+        var c = document.getElementById('adjustCanvas');
+        if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
+        var d = document.getElementById('diagInfoBox');
+        if (d) d.textContent = '';
+        if (typeof RENDER_SKIP !== 'undefined') RENDER_SKIP.last = null;
+      } catch (e) {}
+      return r;
+    };
+  }
 })();
