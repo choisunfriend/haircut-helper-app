@@ -24,7 +24,7 @@
     up: 0.38,         // 귀 위 높이 (옆 방향 대비 위쪽 성분)
     fwd: 0.15,        // 약간 앞쪽
     tilt: 0.35,       // 핀 기울기(앞쪽이 올라가게)
-    lift: 0.012       // 머리 표면에서 띄우는 비율(파묻힘 방지)
+    lift: 0.02        // 머리 표면에서 띄우는 비율(파묻힘 방지)
   };
 
   var texCache = {};
@@ -48,7 +48,7 @@
     }
     if (rs.length < 20) return null;
     rs.sort(function (a, b) { return a - b; });
-    return rs[Math.floor(rs.length * 0.93)];
+    return rs[Math.floor(rs.length * 0.985)];   // 거의 가장 바깥 — 핀이 머리카락 위에 올라앉게
   }
 
   function headCenter(pos) {
@@ -117,6 +117,47 @@
   }
   HP.place = placePin;
 
+  /* ── 진단: 사진 경계 보기 ("Seams" 버튼) ─────────────────────────────
+   * 가닥마다 어느 사진(정면·좌·우·후면)에서 왔는지 색으로 칠해 따로 그립니다.
+   * 두피가 한 줄로 드러나는 자리가 색이 바뀌는 경계와 겹치는지 보려는 것 — 고침이 아니라 확인용.
+   * 정면=빨강 · 좌=초록 · 우=파랑 · 후면=노랑 */
+  HP.seams = false;
+  var VIEW_RGB = { front: [0.95, 0.25, 0.2], left: [0.2, 0.85, 0.3], right: [0.25, 0.45, 1.0], back: [1.0, 0.85, 0.15] };
+  function removeByName(root, name) {
+    var o = root && root.getObjectByName(name);
+    if (!o) return;
+    o.parent.remove(o);
+    if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose();
+  }
+  function showSeams() {
+    if (typeof model3D === 'undefined' || !model3D || !model3D.headGroup) return;
+    var hair = model3D.headGroup.getObjectByName('adjustedHair');
+    removeByName(model3D.headGroup, 'seamView');
+    if (hair) hair.visible = !HP.seams;
+    if (!HP.seams || !hair || typeof computeAdjustedHair3DStrands !== 'function') return;
+    var list = computeAdjustedHair3DStrands();
+    if (!list || !list.length) return;
+    var P = [], C = [];
+    for (var k = 0; k < list.length; k++) {
+      var pts = list[k].pts, ang = list[k].srcAngle || (pts && pts[0] && typeof viewOfRoot === 'function' ? viewOfRoot(pts[0]) : 'front');
+      var c = VIEW_RGB[ang] || [0.6, 0.6, 0.6];
+      if (!pts) continue;
+      for (var i = 1; i < pts.length; i++) {
+        P.push(pts[i - 1].x, pts[i - 1].y, pts[i - 1].z, pts[i].x, pts[i].y, pts[i].z);
+        C.push(c[0], c[1], c[2], c[0], c[1], c[2]);
+      }
+    }
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+    var o = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true }));
+    o.name = 'seamView';
+    o.position.copy(hair.position); o.rotation.copy(hair.rotation); o.scale.copy(hair.scale);
+    hair.parent.add(o);
+  }
+  HP.showSeams = showSeams;
+
+
   /* ── 3D 화면 UI: 핀 고르기 + 좌/우 ─────────────────────────────────── */
   function buildUI() {
     var vp = document.getElementById('model3dViewport');
@@ -141,6 +182,7 @@
         bar.appendChild(chip(c.name, HP.id === c.id, function () { HP.id = c.id; render(); placePin(); }));
       });
       if (HP.id !== 'none') bar.appendChild(chip(HP.side > 0 ? 'Side ◐' : 'Side ◑', false, function () { HP.side = -HP.side; render(); placePin(); }));
+      bar.appendChild(chip(HP.seams ? 'Seams ✓' : 'Seams', HP.seams, function () { HP.seams = !HP.seams; render(); showSeams(); }));
     }
     render();
     vp.appendChild(bar);
@@ -152,7 +194,10 @@
     G.setupModel3DScreen = function () {
       buildUI();
       var r = setup.apply(this, arguments);
-      var after = function () { try { placePin(); } catch (e) { console.warn('[헤어핀] 붙이기 실패', e); } };
+      var after = function () {
+        try { showSeams(); } catch (e) { console.warn('[경계보기] 실패', e); }
+        try { placePin(); } catch (e) { console.warn('[헤어핀] 붙이기 실패', e); }
+      };
       if (r && typeof r.then === 'function') r.then(after, after); else after();
       return r;
     };
