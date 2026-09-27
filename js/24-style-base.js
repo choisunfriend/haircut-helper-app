@@ -38,7 +38,7 @@
    *  true  = 모든 스타일에서 고침(다른 스타일도 볼륨이 커집니다 — 확인 후 켜세요) */
   SB.fixVolHashAll = true;   // 막대만으로 모양을 만들려면 모든 스타일에서 고쳐져 있어야 합니다
   SB.PARAM_KEYS = ['length', 'elevation', 'texture', 'density', 'overdirection', 'line', 'curl', 'wave', 'curlDir',
-    'base', 'define', 'volShare', 'volPoint', 'weight'];
+    'base', 'define', 'volShare', 'volPoint', 'weight', 'curlLen'];
 
   /* 스타일별 엔진 프로필 — 키는 STYLE_SPECS 의 id (또는 커스텀 스타일의 profileId) */
   SB.profiles = {
@@ -364,7 +364,8 @@
    * ---------------------------------------------------------------------- */
   var NEW_PARAMS = {
     perm: [
-      { key: 'base', label: '베이스 폭', hint: '로드 하나에 감는 모발 폭 · 넓을수록 컬 덩어리가 큼', min: 0, max: 100, unit: '%' }
+      { key: 'base', label: '베이스 폭', hint: '로드 하나에 감는 모발 폭 · 넓을수록 컬 덩어리가 큼', min: 0, max: 100, unit: '%' },
+      { key: 'curlLen', label: '컬 구간', hint: '모발 끝에서부터 말리는 길이 · 짧으면 끝만(블로우아웃) · 60=뿌리까지', min: 3, max: 60, unit: 'cm' }
     ],
     set: [
       { key: 'define',   label: '컬 정리감', hint: '컬크림·에센스로 결을 모은 정도 · 낮으면 부스스', min: 0, max: 100, unit: '%' },
@@ -374,7 +375,7 @@
     ]
   };
   // 예전 엔진값과 같은 결과가 나오는 기본 숫자
-  var NEW_DEFAULTS = { base: 55, define: 30, volShare: 50, volPoint: 50, weight: 50 };
+  var NEW_DEFAULTS = { base: 55, define: 30, volShare: 50, volPoint: 50, weight: 50, curlLen: 20 };   // curlLen 20 = 엔진 기본 windCm
   var VOL_SECK0 = null;   // 섹션별 예전 부피 배수(VOLUME3D.secK)
 
   function secVal(sec, key) {
@@ -414,6 +415,7 @@
     try {
       if (typeof GY_ALL_PARAMS !== 'undefined') {
         if (GY_ALL_PARAMS.perm.indexOf('base') < 0) GY_ALL_PARAMS.perm.push('base');
+        if (GY_ALL_PARAMS.perm.indexOf('curlLen') < 0) GY_ALL_PARAMS.perm.push('curlLen');
         GY_ALL_PARAMS.set = NEW_PARAMS.set.map(function (p) { return p.key; });
       }
     } catch (e) {}
@@ -439,7 +441,8 @@
         '부피감': 'Lift', '이 섹션이 두상에서 뜨는 정도': 'How far this section stands off the head',
         '볼륨 위치': 'Volume point', '뿌리 ↔ 모발 끝 · 끝쪽일수록 밑단이 퍼짐': 'Root ↔ ends · toward ends = flared hem',
         '처짐': 'Weight', '모발 무게로 내려앉는 정도 · 낮을수록 컬이 뜸': 'How much the hair drops under its weight',
-        '앞머리 기장': 'Fringe length', '눈썹 위 ↔ 눈 아래': 'Above brows ↔ below eyes'
+        '앞머리 기장': 'Fringe length', '눈썹 위 ↔ 눈 아래': 'Above brows ↔ below eyes',
+        '컬 구간': 'Curl zone', '모발 끝에서부터 말리는 길이 · 짧으면 끝만(블로우아웃) · 60=뿌리까지': 'How far up from the ends the curl reaches · short = ends only (blowout) · 60 = from roots'
       });
     } catch (e) {}
     try { VOL_SECK0 = clone((CFG.VOLUME3D() || {}).secK) || null; } catch (e) {}
@@ -537,9 +540,12 @@
         if (!SB.on || !CUR_SEC || !G.CURL_BUNDLE) return f.apply(this, arguments);
         var self = this, args = arguments, b = secVal(CUR_SEC, 'base'), d = secVal(CUR_SEC, 'define');
         var tmp = { rodK: SB.map.rodK(b), clumpPull: SB.map.clumpPull(d), phaseJitter: SB.map.phaseJitter(d) };
+        // 컬 구간 막대: 기본 20cm(=엔진 기본)이면 손대지 않음 → 기존 스타일·프리셋 그대로
+        var cl = secVal(CUR_SEC, 'curlLen'), wind = G.CURL_BUNDLE.windCm;
+        if (cl !== NEW_DEFAULTS.curlLen) { wind = cl >= 60 ? 99 : cl; tmp.windCm = wind; }
         var cut = cutCm();
         if (cut > 0) {
-          var w = G.CURL_BUNDLE.windCm - cut;
+          var w = wind - cut;
           if (w <= 0.5) return args[0];          // 컬 구간이 다 잘려 나감 → 곧은 머리
           tmp.windCm = w;
         }
@@ -837,7 +843,7 @@
   if (typeof STYLE_SPECS === 'undefined' || typeof STYLES === 'undefined' || STYLE_SPECS[ID]) return;
 
   var set = function (o, extra) {   // 펌·세팅 기준값(막대 숫자)
-    return Object.assign({ base: 25, define: 60, volShare: 55, volPoint: 75, weight: 35 }, extra || {}, o);
+    return Object.assign({ base: 25, define: 60, volShare: 55, volPoint: 75, weight: 35, curlLen: 14 }, extra || {}, o);   // curlLen 14 = 끝 14cm만 컬
   };
   STYLE_SPECS[ID] = {
     name: 'Long blowout waves · Center part · Big bottom curls',
@@ -876,7 +882,6 @@
       label: 'Long blowout waves',
       config: {
         CURL_BUNDLE: {
-          windCm: 14,          // 끝에서 14cm만 감김 — 위쪽은 곧게
           rodThickCm: 5,       // 굵은 롤
           pitchThick: 1.8,     // 한 바퀴가 느슨하게
           relax: 1.2,
