@@ -5,11 +5,9 @@
  * 그러면 남은 시간이 어디로 가는지 <b>모르는 상태</b>이고, 모르는 채로 상수를
  * 흔드는 것은 이 파일이 반복해서 실패한 방식입니다. 그래서 두 가지를 합니다.
  *
- *   A. 재는 장치 — 무거운 함수의 누적 시간·호출수를 모아 순위표로 냅니다.
- *      나오는 자리는 <b>화면의 진단정보 패널</b>입니다(perfPanelLines에 이어 붙임).
- *      폰에는 콘솔이 없고, 무엇보다 이 앱이 느린 곳은 저사양 폰이라
- *      <b>느린 기계가 스스로 읽을 수 있어야</b> 재는 의미가 있습니다.
- *      콘솔이 있는 환경이면 GYEOL_PERF.report()도 같은 표를 찍습니다.
+ *   A. 재는 장치 — 무거운 함수의 누적 시간·호출수를 모아 순위표로 찍습니다.
+ *      콘솔에서  GYEOL_PERF.report()
+ *      첫 조정 진입·첫 3D 진입 뒤에 자동으로 한 번씩도 찍습니다.
  *      ⚠ 이건 고침이 아니라 <b>다음 고침을 어디에 할지 정하는 자</b>입니다.
  *
  *   B. 확인된 고침 — 스펙 풀이의 탐침 횟수 (하네스로 검증, 아래 수치 참조)
@@ -78,13 +76,7 @@
     return true;
   }
 
-  /* 무거울 만한 자리 — 이름이 없으면 조용히 건너뜁니다(모듈 구성이 바뀌어도 안 깨짐).
-     ⚠ <b>async 함수는 첫 await까지만</b> 잡힙니다(래퍼의 finally가 프라미스를
-       돌려주는 시점에 돕니다). 그래서 setupModel3DScreen·extractHairMask·
-       buildNeutralHair3D가 실제보다 작게 나옵니다 — 그 줄은 "이 함수가 빠르다"가
-       아니라 "여기서는 못 잰다"로 읽어야 합니다. 동기 함수(adjustStrandGeom,
-       computeAdjustedHair3DStrands, applyStyleSpec, buildAdjustedHair3DObject,
-       renderFrame)의 숫자는 그대로 믿어도 됩니다. */
+  /* 무거울 만한 자리 — 이름이 없으면 조용히 건너뜁니다(모듈 구성이 바뀌어도 안 깨짐). */
   [
     'buildNeutralHair3D',        // 중립 3D 모델 생성 — 첫 진입의 큰 덩어리
     'captureStrandPathsFor',     // 사진 한 장에서 가닥 경로 뜨기(뷰마다)
@@ -113,75 +105,35 @@
     P.memoHits = P.memoMiss = P.probesBefore = P.probesAfter = 0;
   };
 
-  /* 폭 좁은 폰 화면이라 이름을 22자로 자르고 막대는 14칸까지만 씁니다.
-     기기 정보를 같이 찍는 이유: 이 숫자는 <b>이 기계의 숫자</b>라서,
-     나중에 다른 기기 표와 나란히 놓으려면 어느 기계였는지가 붙어 있어야 합니다. */
-  P.lines = function () {
+  P.report = function (label) {
     var rows = [];
     for (var k in P.t) if (P.t[k].n) rows.push([k, P.t[k].ms, P.t[k].n]);
-    var dev = '';
-    try {
-      dev = ' · 코어 ' + (navigator.hardwareConcurrency || '?') +
-        (navigator.deviceMemory ? ' · RAM ' + navigator.deviceMemory + 'GB' : '') +
-        (typeof isLowMemDevice === 'function' && isLowMemDevice() ? ' · 저사양판정' : '');
-    } catch (e) {}
-    var out = ['[성능·순위] 앱을 연 뒤 누적' + dev];
-    if (!rows.length) {
-      out.push('  아직 잡힌 게 없습니다 — 조정 화면을 한 번 거친 뒤 다시 열어보세요.');
-      return out;
-    }
+    if (!rows.length) { console.log('[성능·순위] 아직 잡힌 게 없습니다'); return; }
     rows.sort(function (a, b) { return b[1] - a[1]; });
-    var top = rows[0][1];
-    out.push('  함수                   누적ms   호출   1회');
+    var total = rows[0][1];
+    var out = ['[성능·순위] ' + (label || '') + '  — 누적 ms(포함 시간) · 호출수 · 1회 평균'];
     rows.forEach(function (r) {
-      var bar = new Array(Math.max(1, Math.round(r[1] / top * 14)) + 1).join('▇');
-      out.push('  ' + r[0].slice(0, 22).padEnd(22) +
-        r[1].toFixed(0).padStart(7) + '  ' +
-        String(r[2]).padStart(5) + '  ' +
-        (r[1] / r[2]).toFixed(1).padStart(6) + ' ' + bar);
+      var bar = new Array(Math.max(1, Math.round(r[1] / total * 28)) + 1).join('█');
+      out.push('  ' + r[0].slice(0, 30).padEnd(30) + ' ' +
+        r[1].toFixed(0).padStart(7) + 'ms  ' +
+        String(r[2]).padStart(6) + '회  ' +
+        (r[1] / r[2]).toFixed(2).padStart(7) + 'ms  ' + bar);
     });
-    out.push('  ─ 포함 시간입니다 — 위가 아래를 품습니다.');
-    out.push('    누적이 크면 <b>부르는 쪽 횟수</b>를, 1회가 크면 <b>그 함수 안</b>을 볼 자리입니다.');
+    out.push('  ─ 읽는 법: 포함 시간이라 위가 아래를 품습니다.');
+    out.push('    adjustStrandGeom의 누적이 크면 <b>부르는 쪽의 횟수</b>를 줄일 자리고,');
+    out.push('    1회 평균이 크면 <b>그 함수 안</b>을 볼 자리입니다.');
     if (P.probesAfter) {
-      out.push('  ─ 스펙 풀이 탐침 ' + P.probesBefore + '회 → <b>' + P.probesAfter + '회</b>' +
+      out.push('  ─ 스펙 풀이 탐침: 예전 규칙이면 ' + P.probesBefore + '회였을 것을 ' +
+        '<b>' + P.probesAfter + '회</b>로 찍었습니다' +
         ' (' + Math.round((1 - P.probesAfter / Math.max(1, P.probesBefore)) * 100) + '% 감소)');
     }
     if (P.memoHits + P.memoMiss) {
-      out.push('  ─ 같은 측정 재사용 ' + P.memoHits + '적중 / ' + P.memoMiss + '재계산');
+      out.push('  ─ 같은 측정 재사용: ' + P.memoHits + '적중 / ' + P.memoMiss + '재계산');
     }
-    return out;
+    console.log(out.join('\n').replace(/<b>|<\/b>/g, ''));
   };
 
-  P.report = function (label) {
-    console.log((label ? '[' + label + ']\n' : '') +
-      P.lines().join('\n').replace(/<b>|<\/b>/g, ''));
-  };
-
-  /* ── 순위표를 <b>진단정보 패널</b>로 보낸다 (필수) ────────────────────
-     처음에 이걸 console.log로만 냈는데, 사용자가 짚었습니다:
-     "지금 스마트폰으로 찍어서 콘솔로는 안 보이고" · "노트북은 훨씬 빨리 뜰 텐데
-     그래도 콘솔로 진단돼?"
-
-     둘 다 맞습니다. 그리고 두 번째가 더 중요합니다 — 노트북에서 재면
-     <b>다른 기계의 숫자</b>가 나올 뿐입니다. 저사양 폰에서 20초인 것이 노트북에서
-     2초면 그 순위표는 "여긴 안 느리다"만 말하고, 정작 폰에서 무엇이 오래
-     걸리는지는 못 말합니다. 재는 장치는 <b>느린 기계가 읽을 수 있는 자리</b>에
-     있어야 합니다. 이 앱에서 그 자리는 콘솔이 아니라 진단정보 패널입니다.
-
-     perfPanelLines()가 그 패널의 첫 블록이라 거기에 이어 붙입니다
-     (패널을 여는 쪽 toggleDiagInfo는 안 건드립니다 — 부르는 자리가 한 곳이라
-     여기만 감싸면 됩니다). */
-  (function toPanel() {
-    var orig = G.perfPanelLines;
-    if (typeof orig !== 'function') return;
-    G.perfPanelLines = function () {
-      var lines = orig.apply(this, arguments);
-      try { lines = lines.concat(P.lines()); } catch (e) { lines.push('  [성능·순위] 실패: ' + e); }
-      return lines;
-    };
-  })();
-
-  /* 첫 조정 진입·첫 3D 진입 뒤 자동 1회 — 콘솔이 있는 환경용 보조입니다. */
+  /* 첫 조정 진입·첫 3D 진입 뒤 자동 1회 — 사용자가 콘솔을 안 열어도 남습니다. */
   (function autoReport() {
     var navOrig = G.navTo;
     if (typeof navOrig !== 'function') return;
@@ -294,58 +246,6 @@
     };
   }
 
-  /* ── C. 실루엣 측정을 <b>패널을 열 때</b>로 미룬다 (2026-09-27 · 폰 실측) ───
-     저사양 폰(코어 8 · RAM 4GB · 저사양판정) 진단정보 순위표:
-       applyStyleSpec          7434ms /     1회
-       adjustStrandGeom        5957ms / 87451회
-       computeAdjustedHair3DS  5179ms /    17회
-       measureSectionTipY      1607ms /   146회
-     applyStyleSpec 7.4초 중 길이 역산은 <b>1.6초뿐</b>입니다. 나머지 5.8초는
-     끝에서 부르는 reportSilhouette입니다 — ANGLES 네 뷰를 돌며 뷰마다
-     measureSilhouette → <b>computeAdjustedHair3DStrands를 통째로</b> 다시 돌립니다.
-     스펙이 섹션 길이를 막 바꾼 직후라 ADJ_CACHE가 전부 빗나가고, 네 번 모두
-     20,000가닥대를 새로 계산합니다. 그게 adjustStrandGeom 87,451회의 큰 몫입니다.
-
-     그런데 이 측정의 <b>소비처는 specPanelLines 하나</b>입니다 — 진단정보 패널의
-     "실루엣 W/H · 요철 · 비침덩어리" 줄. 화면에 그리는 데에는 한 글자도 안 씁니다.
-     27번이 RENDER_MATCH를 끈 것과 같은 종류입니다: <b>진단이 진단 대상을
-     느리게 만들고 있었습니다</b>.
-
-     지우지는 않습니다 — 스타일을 레퍼런스와 맞출 때 필요한 자입니다. 대신
-     <b>패널을 열 때 그 자리에서</b> 잽니다. 그러면 첫 진입에서는 0초이고,
-     숫자가 필요한 사람은 진단정보를 눌러 그대로 봅니다(같은 모델·같은 자).
-     ⚠ 패널을 열면 그때 5초쯤 걸립니다. 그게 맞는 거래입니다 — 첫 진입은
-       손님이 기다리는 시간이고, 진단정보는 만드는 사람이 여는 것입니다.
-     끄기: GYEOL_PERF.lazySilhouette = false (예전처럼 적용 즉시 잽니다) */
-  P.lazySilhouette = true;
-  (function deferSilhouette() {
-    var rep = G.reportSilhouette;
-    if (typeof rep !== 'function') return;
-    var pending = null;            // 아직 안 잰 스펙 id
-    G.reportSilhouette = function (id) {
-      if (!P.lazySilhouette) return rep.apply(this, arguments);
-      pending = (id == null) ? '' : id;
-      return null;                 // applyStyleSpec은 null을 이미 다루고 있다
-    };
-    var panel = G.specPanelLines;
-    if (typeof panel !== 'function') return;
-    G.specPanelLines = function () {
-      if (P.lazySilhouette && pending !== null) {
-        var id = pending; pending = null;
-        try {
-          var t0 = now();
-          var v = rep(id);
-          if (state._lastSpec) state._lastSpec.rep.silhouette = v;
-          (P.t.reportSilhouette || (P.t.reportSilhouette = { ms: 0, n: 0 })).ms += now() - t0;
-          P.t.reportSilhouette.n++;
-        } catch (e) { console.warn('[실루엣] 지연 측정 실패:', e); }
-      }
-      return panel.apply(this, arguments);
-    };
-  })();
-
-  console.log('[성능] 28-perf-probe 적용 — 스펙 풀이 탐침 9회→약 2.6회(하네스 75,600표본, 참값 대비 최대 1칸).' +
-    '\n    어디가 느린지는 화면 왼쪽 <b>진단정보</b>를 누르면 맨 위 [성능·순위]에 나옵니다(폰에서 그대로 읽힙니다).' +
-    '\n    실루엣 측정은 진단정보를 열 때로 미뤘습니다(GYEOL_PERF.lazySilhouette=false로 원복).' +
-    '\n    콘솔이 있으면 GYEOL_PERF.report() · 되돌리기 GYEOL_PERF.solver=false');
+  console.log('[성능] 28-perf-probe 적용 — 스펙 풀이 탐침 9회→약 2.7회(하네스 41,580표본, 최대 차 1칸).' +
+    '\n    어디가 느린지 보려면 콘솔에 GYEOL_PERF.report() · 되돌리기 GYEOL_PERF.solver=false');
 })();
