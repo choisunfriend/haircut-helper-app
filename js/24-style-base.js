@@ -777,3 +777,84 @@
   // 앞의 스크립트가 모두 동기 로드된 뒤라 바로 설치합니다(부트 코드가 원래 함수를 먼저 부르지 않도록).
   install();
 })();
+
+/* ==========================================================================
+ * 새 스타일: Long Blowout Waves (미국 살롱 스타일 — 긴 레이어드 + 끝부분 굵은 웨이브)
+ *
+ *   · 길이: 어깨~쇄골 (옆·뒤), 크라운·관자놀이는 레이어로 더 짧게
+ *   · 앞머리: 커튼뱅 — 코끝~윗입술 높이에서 양옆으로 갈라짐
+ *   · 컬: 뿌리~중간은 곧게, 끝 약 14cm만 굵은 롤(블로아웃)
+ *       → CURL_BUNDLE.windCm = 끝에서부터 감기는 길이 (헤드리스 시험: 12cm면 위쪽은 0, 끝만 감김)
+ *       → rodThickCm 5 = 굵은 롤, pitchThick 1.8 = 촘촘하지 않은 한 바퀴
+ *   · 볼륨 위치(volPoint)를 아래쪽으로 — 끝이 풍성
+ * 값은 모두 막대 숫자라 조정 화면에서 그대로 움직일 수 있습니다.
+ * ======================================================================== */
+(function () {
+  'use strict';
+  var G = window;
+  var ID = 'long_blowout_waves';
+  if (typeof STYLE_SPECS === 'undefined' || typeof STYLES === 'undefined' || STYLE_SPECS[ID]) return;
+
+  var set = function (o, extra) {   // 펌·세팅 기준값(막대 숫자)
+    return Object.assign({ base: 25, define: 60, volShare: 55, volPoint: 75, weight: 35 }, extra || {}, o);
+  };
+  STYLE_SPECS[ID] = {
+    name: 'Long blowout waves · Curtain bangs · Big bottom curls',
+    tipAt: {                 // 두상 높이 기준 끝 위치 (1.0 ≈ 턱선)
+      front: 0.78,           // 커튼뱅: 코끝~윗입술
+      crown: 1.08,           // 레이어 — 위쪽이 짧아야 끝 웨이브가 층층이 보임
+      temple: 1.18,          // 얼굴 감싸는 층
+      side: 1.42,            // 어깨
+      occipital: 1.50,
+      nape: 1.55             // 쇄골 근처
+    },
+    cut: {
+      crown:     set({ technique: 'uniform', elevation: 70, texture: 40, density: 90, curlDir: 20 }),
+      front:     set({ technique: 'uniform', elevation: 20, texture: 55, density: 45, line: 50, curlDir: 25 }, { volShare: 40 }),
+      temple:    set({ technique: 'uniform', elevation: 55, texture: 45, density: 75, overdirection: 30, curlDir: 25 }),
+      side:      set({ technique: 'uniform', elevation: 45, texture: 45, density: 100, curlDir: 25 }, { volShare: 65 }),
+      occipital: set({ technique: 'uniform', elevation: 45, texture: 40, density: 100, curlDir: 20 }, { volShare: 60 }),
+      nape:      set({ technique: 'uniform', elevation: 25, texture: 35, density: 100, line: 50, curlDir: 20 })
+    },
+    perm: { curl: 42, wave: 95 },     // wave 95 = 굵은 롤
+    styling: { sweep: 0, volume: 50, flow: 30, part: 0, partAmt: 0, finish: 55, sleek: 20 },
+    globalCurl: 42,
+    color: '#1E1712'
+  };
+
+  STYLES.push({
+    id: ID, specId: ID,
+    name: 'Blowout Waves',
+    tags: 'Long layers · Curtain bangs · Big bottom curls',
+    length: 92, curl: 42, volume: 60, colorHex: '#1E1712'
+  });
+  try { if (typeof RECIPE_STYLES !== 'undefined' && RECIPE_STYLES.indexOf(ID) < 0) RECIPE_STYLES.push(ID); } catch (e) {}
+
+  if (G.STYLE_BASE && G.STYLE_BASE.addProfile) {
+    G.STYLE_BASE.addProfile(ID, {
+      label: 'Long blowout waves',
+      config: {
+        CURL_BUNDLE: {
+          windCm: 14,          // 끝에서 14cm만 감김 — 위쪽은 곧게
+          rodThickCm: 5,       // 굵은 롤
+          pitchThick: 1.8,     // 한 바퀴가 느슨하게
+          relax: 1.2,
+          microAmp: 0.02,      // 잔곱슬 거의 없음(드라이로 편 결)
+          microPhase: 0.1
+        },
+        CURL3D_FIX: { ampGamma: 0.7 },
+        VOLUME3D: { AMP: 0.16 },
+        MQ_FRINGE: {
+          tipFaceFrac: 0.5,        // 커튼뱅 가운데 끝: 눈썹에서 얼굴 높이의 절반 아래
+          lineFloorFaceFrac: 0.8,  // 양옆으로 갈수록 길게 — 커튼 모양
+          crownAllAround: false
+        }
+      },
+      volBase: 1.0,
+      after: { front: { curl: 30 } },   // 커튼뱅은 바깥으로 넘어가는 C컬 정도
+      shade: { ao: 0.42, lumCap: 1.3, spec: 0.26, specPow: 60 }   // 블로아웃 광택 조금 더
+    });
+  }
+  try { if (typeof buildStyleGrid === 'function') buildStyleGrid(); } catch (e) { console.warn('[스타일] 목록 다시 그리기 실패', e); }
+  console.log('[스타일] Blowout Waves 추가');
+})();
