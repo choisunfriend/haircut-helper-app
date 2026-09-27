@@ -452,3 +452,58 @@
   G.STYLE_FAST.line = timingLine;
   console.log('[성능] 28-perf-probe(C) 적용 — 스타일 적용 때 진단 계산(전체 가닥 조정·실루엣 4뷰·뷰별 재풀이)을 진단 패널 열 때로 미룸. 끄기 STYLE_FAST.on=false');
 })();
+
+
+/* ── D. 3D준비 · 3D 결과 화면 단계별 시간 ───────────────────────────────
+ * [시간·3D준비] 뷰별 사진→가닥 경로(captureStrandPathsFor) · 3D 들어올리기(buildHairStrandsFromPaths)
+ * [시간·3D화면] 두상 · 헤어 객체 · 의상 추천 · 의상 로딩 · 얼굴 메쉬 · 합계
+ * 비동기 함수는 promise가 끝날 때까지 잽니다. 3D 화면에는 진단 버튼이 없어서
+ * 조정 화면으로 돌아와 진단을 열면 같이 보입니다.
+ * ======================================================================== */
+(function () {
+  'use strict';
+  var G = window, F = G.STYLE_FAST;
+  if (!F) return;
+  var T = F.t3 = { prep: {}, scr: {} };
+  function now() { try { return performance.now(); } catch (e) { return Date.now(); } }
+  function timeIt(name, bucket, key) {
+    var f = G[name];
+    if (typeof f !== 'function') return;
+    G[name] = function () {
+      var t0 = now(), k = key ? key(arguments) : name, b = T[bucket];
+      var done = function () { b[k] = (b[k] || 0) + (now() - t0); };
+      var r;
+      try { r = f.apply(this, arguments); } catch (e) { done(); throw e; }
+      if (r && typeof r.then === 'function') { r.then(done, done); } else done();
+      return r;
+    };
+  }
+  // 3D준비 내부 (조정 화면·3D 화면 둘 다에서 불림)
+  var nb = G.buildNeutralHair3D;
+  if (typeof nb === 'function') {
+    G.buildNeutralHair3D = function (cb) { T.prep = {}; var t0 = now();
+      return nb.call(this, function () { T.prep.total = now() - t0; if (cb) return cb.apply(this, arguments); }); };
+  }
+  timeIt('captureStrandPathsFor', 'prep', function (a) { return '경로·' + a[0]; });
+  timeIt('buildHairStrandsFromPaths', 'prep', function () { return '들어올리기'; });
+  // 3D 결과 화면
+  var sm = G.setupModel3DScreen;
+  if (typeof sm === 'function') {
+    G.setupModel3DScreen = function () { T.scr = {}; var t0 = now(), r = sm.apply(this, arguments);
+      var d = function () { T.scr['합계'] = now() - t0; }; if (r && r.then) r.then(d, d); else d(); return r; };
+  }
+  timeIt('loadHeadMesh', 'scr', function () { return '두상'; });
+  timeIt('buildAdjustedHair3DObject', 'scr', function () { return '헤어객체'; });
+  timeIt('recommendOutfitWithAI', 'scr', function () { return '의상추천'; });
+  timeIt('loadOutfitMeshMeasured', 'scr', function () { return '의상로딩'; });
+  timeIt('buildRealFaceMesh', 'scr', function () { return '얼굴메쉬(합계 밖)'; });
+
+  function fmt(o) { var a = []; for (var k in o) if (k !== 'total') a.push(k + ' ' + Math.round(o[k]) + 'ms'); return a.length ? a.join(' · ') : '아직 없음'; }
+  var pl = G.perfPanelLines;
+  G.perfPanelLines = function () {
+    var lines = pl.apply(this, arguments) || [];
+    var p = '[시간·3D준비] ' + (T.prep.total != null ? '전체 ' + Math.round(T.prep.total) + 'ms · ' : '') + fmt(T.prep);
+    var s = '[시간·3D화면] ' + fmt(T.scr);
+    return [lines[0], p, s].concat(lines.slice(1));
+  };
+})();
