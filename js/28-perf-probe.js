@@ -747,3 +747,30 @@
     };
   }
 })();
+
+/* F. 의상 OBJ 재시도 — GitHub Pages가 가끔 503을 주면 한 번에 네모 상자 옷으로 떨어지던 것.
+ *    실패하면 0.6s·1.5s·3s 뒤 다시 받아 봅니다(캐시 우회). 끄기 OUTFIT_RETRY.on=false */
+(function () {
+  var R = window.OUTFIT_RETRY = window.OUTFIT_RETRY || { on: true, waits: [600, 1500, 3000] };
+  function hook() {
+    var L = window.THREE && THREE.OBJLoader;
+    if (!L || !L.prototype || L.prototype.__retry) return !!L;
+    var orig = L.prototype.load;
+    L.prototype.load = function (url, onLoad, onProgress, onError) {
+      var self = this, n = 0;
+      function go(u) {
+        orig.call(self, u, onLoad, onProgress, function (err) {
+          if (R.on && n < R.waits.length) {
+            var w = R.waits[n++];
+            console.warn('[의상·재시도] ' + url + ' 실패 → ' + w + 'ms 뒤 ' + n + '번째 재시도');
+            setTimeout(function () { go(url + (url.indexOf('?') < 0 ? '?' : '&') + 'r=' + Date.now()); }, w);
+          } else if (onError) onError(err);
+        });
+      }
+      go(url);
+    };
+    L.prototype.__retry = true;
+    return true;
+  }
+  if (!hook()) { var t = setInterval(function () { if (hook()) clearInterval(t); }, 300); setTimeout(function () { clearInterval(t); }, 30000); }
+})();
