@@ -900,3 +900,43 @@
   try { if (typeof buildStyleGrid === 'function') buildStyleGrid(); } catch (e) { console.warn('[스타일] 목록 다시 그리기 실패', e); }
   console.log('[스타일] Blowout Waves 추가');
 })();
+
+/* ==========================================================================
+ * 앞 가르마 자리 뿌리 메우기 (마네킹 재심기)
+ * Roots 보기로 확인: 이마 가운데 헤어라인에 뿌리가 한 칸 덩어리로 비어 있었음 = 원본 사진의 가르마 선이
+ * 두피로 보여 밀도(den)가 baldDen(0.08) 아래로 잡힌 칸. 거기엔 가닥을 안 심어서 앞쪽이 벌어졌습니다.
+ * 같은 가로줄(같은 높이)에서 양옆이 모두 머리인 좁은 빈 칸(최대 GAP칸)만 양옆 평균 밀도로 채웁니다.
+ * 얼굴·두피 밖 칸(EST_OFFSCALP)과 헤어라인 바깥(한쪽만 머리)은 그대로 → 이마가 넓어지지 않음.
+ * 원본 밀도 배열은 심은 뒤 되돌립니다. 끄기: STYLE_BASE.fillPartGap = false
+ * ======================================================================== */
+(function () {
+  'use strict';
+  var G = window, SB = G.STYLE_BASE || {};
+  SB.fillPartGap = true;
+  var GAP = 5;
+  var orig = G.buildMannequinHair3D;
+  if (typeof orig !== 'function') return;
+  G.buildMannequinHair3D = function () {
+    var M = state && (state._hair3Dneutral || state.hair3D), R = M && M.roots;
+    if (!SB.fillPartGap || !R || !R.ok || !R.den || !R.NT || !R.NP) return orig.apply(this, arguments);
+    var NT = R.NT, NP = R.NP, den = R.den, bald = (typeof MANNEQUIN !== 'undefined' ? MANNEQUIN.baldDen : 0.08);
+    var off = (typeof EST_OFFSCALP !== 'undefined' && R.est) ? function (i) { return R.est[i] === EST_OFFSCALP; } : function () { return false; };
+    var saved = den.slice ? den.slice() : Array.prototype.slice.call(den), filled = 0;
+    for (var ip = 0; ip < NP; ip++) {
+      var row = ip * NT;
+      for (var it = 0; it < NT; it++) {
+        var i = row + it;
+        if (den[i] > bald || off(i)) continue;
+        var L = 0, Ld = 0, Rt = 0, Rd = 0;
+        for (var k = 1; k <= GAP; k++) { var j = row + (it - k + NT) % NT; if (off(j)) break; if (saved[j] > bald) { L = k; Ld = saved[j]; break; } }
+        for (var k2 = 1; k2 <= GAP; k2++) { var j2 = row + (it + k2) % NT; if (off(j2)) break; if (saved[j2] > bald) { Rt = k2; Rd = saved[j2]; break; } }
+        if (L && Rt && L + Rt - 1 <= GAP) { den[i] = (Ld + Rd) / 2; filled++; }
+      }
+    }
+    try { return orig.apply(this, arguments); }
+    finally {
+      for (var q = 0; q < saved.length; q++) den[q] = saved[q];
+      if (filled) console.log('[가르마 뿌리 메우기] 좁은 빈 칸 ' + filled + '개를 양옆 밀도로 채워 심음');
+    }
+  };
+})();
