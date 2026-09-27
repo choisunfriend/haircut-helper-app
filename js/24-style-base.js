@@ -513,6 +513,24 @@
       return arcLength3D(CUR_STRAND.pts) * cm * (rb - rn);
     }
     SB._asSec = function (sec, fn) { var p = CUR_SEC; CUR_SEC = sec; try { return fn(); } finally { CUR_SEC = p; } };  // 점검용
+    /* 가르마는 앞이마~정수리까지만 — 뒤통수로 넘어가지 않게
+     * 재 보니 가르마 미는 힘이 정수리(고도 88°)에서 최대인 채로 뒤쪽으로 이어져, 뒤 가운데 고도 80°에서
+     * 0.048 · 70°에서 0.019(앞이마 0.061)가 남아 있었습니다 → 뒷머리 가운데가 좌우로 갈라져 두피가 한 줄로 보임.
+     * (Seams 색칠로 확인: 갈라진 줄은 사진 경계가 아니라 후면 사진 한가운데였음)
+     * 뿌리의 앞뒤 위치(z/c)로 약하게 합니다: 정수리보다 조금 앞(+0.15c)까지 100%, 정수리 뒤 -0.15c에서 0. */
+    SB.partFrontOnly = true;
+    wrap('partingPushHead', function (f) {
+      return function (root) {
+        var v = f.apply(this, arguments);
+        if (!v || !SB.partFrontOnly || !root) return v;
+        var c = 1; try { c = getHeadEllipsoid().c || 1; } catch (e) {}
+        var zn = root.z / c, lo = -0.15, hi = 0.15;
+        var t = Math.max(0, Math.min(1, (zn - lo) / (hi - lo))), w = t * t * (3 - 2 * t);
+        if (w >= 1) return v;
+        if (w <= 0) return null;
+        return { x: v.x * w, y: v.y * w, z: v.z * w };
+      };
+    });
     // 펌 · 베이스 폭 / 세팅 · 컬 정리감
     wrap('curlStrand3D', function (f) {
       return function () {
