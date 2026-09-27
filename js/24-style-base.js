@@ -488,21 +488,44 @@
     });
 
     // 섹션을 아는 곳(adjustStrandGeom)에서 지금 섹션을 기억 → 섹션을 모르는 계산들이 막대 값을 씀
-    var CUR_SEC = null;
+    var CUR_SEC = null, CUR_STRAND = null, CUR_LEN = null;
     wrap('adjustStrandGeom', function (f) {
-      return function (strand) {
-        var prev = CUR_SEC; CUR_SEC = strand && strand.sec || null;
-        try { return f.apply(this, arguments); } finally { CUR_SEC = prev; }
+      return function (strand, len) {
+        var prev = CUR_SEC, ps = CUR_STRAND, pl = CUR_LEN;
+        CUR_SEC = strand && strand.sec || null; CUR_STRAND = strand || null; CUR_LEN = (typeof len === 'number') ? len : null;
+        try { return f.apply(this, arguments); } finally { CUR_SEC = prev; CUR_STRAND = ps; CUR_LEN = pl; }
       };
     });
+    /* 자르기 = 끝의 컬도 같이 잘려 나감
+     * 컬은 "끝에서 windCm 만큼" 감기므로, 길이를 줄이면 컬 구간이 뿌리 쪽으로 따라 올라가
+     * 머리가 두피 속으로 빨려 들어가는 것처럼 보였습니다. 스타일 기준 길이보다 짧게 자른 만큼(cm)
+     * 감기는 길이를 줄이고, 다 잘려 나가면 곧게 둡니다. 스타일을 걸 때(기준 저장 전)는 적용하지 않음. */
+    SB.cutRemovesCurl = true;
+    function cutCm() {
+      var S = st(), base = S && S._styleBase && S._styleBase[CUR_SEC];
+      if (!SB.cutRemovesCurl || !base || base.length == null || !CUR_STRAND || !CUR_STRAND.pts) return 0;
+      var now = CUR_LEN != null ? CUR_LEN : (S.sections[CUR_SEC] && S.sections[CUR_SEC].length);
+      if (!(now < base.length) || typeof sectionLengthRatio !== 'function') return 0;
+      var rb = sectionLengthRatio(CUR_SEC, base.length), rn = sectionLengthRatio(CUR_SEC, now);
+      if (!(rn < rb)) return 0;
+      var cm = (typeof modelCmPerUnit === 'function' && modelCmPerUnit()) || 0;
+      if (!cm || typeof arcLength3D !== 'function') return 0;
+      return arcLength3D(CUR_STRAND.pts) * cm * (rb - rn);
+    }
     SB._asSec = function (sec, fn) { var p = CUR_SEC; CUR_SEC = sec; try { return fn(); } finally { CUR_SEC = p; } };  // 점검용
     // 펌 · 베이스 폭 / 세팅 · 컬 정리감
     wrap('curlStrand3D', function (f) {
       return function () {
         if (!SB.on || !CUR_SEC || !G.CURL_BUNDLE) return f.apply(this, arguments);
         var self = this, args = arguments, b = secVal(CUR_SEC, 'base'), d = secVal(CUR_SEC, 'define');
-        return withTemp(G.CURL_BUNDLE, { rodK: SB.map.rodK(b), clumpPull: SB.map.clumpPull(d), phaseJitter: SB.map.phaseJitter(d) },
-          function () { return f.apply(self, args); });
+        var tmp = { rodK: SB.map.rodK(b), clumpPull: SB.map.clumpPull(d), phaseJitter: SB.map.phaseJitter(d) };
+        var cut = cutCm();
+        if (cut > 0) {
+          var w = G.CURL_BUNDLE.windCm - cut;
+          if (w <= 0.5) return args[0];          // 컬 구간이 다 잘려 나감 → 곧은 머리
+          tmp.windCm = w;
+        }
+        return withTemp(G.CURL_BUNDLE, tmp, function () { return f.apply(self, args); });
       };
     });
     // 세팅 · 처짐
@@ -782,7 +805,7 @@
  * 새 스타일: Long Blowout Waves (미국 살롱 스타일 — 긴 레이어드 + 끝부분 굵은 웨이브)
  *
  *   · 길이: 어깨~쇄골 (옆·뒤), 크라운·관자놀이는 레이어로 더 짧게
- *   · 앞머리: 커튼뱅 — 코끝~윗입술 높이에서 양옆으로 갈라짐
+ *   · 앞머리 없음: 가운데 가르마로 양옆에 넘김 → 얼굴이 드러남, 얼굴선 레이어는 턱선
  *   · 컬: 뿌리~중간은 곧게, 끝 약 14cm만 굵은 롤(블로아웃)
  *       → CURL_BUNDLE.windCm = 끝에서부터 감기는 길이 (헤드리스 시험: 12cm면 위쪽은 0, 끝만 감김)
  *       → rodThickCm 5 = 굵은 롤, pitchThick 1.8 = 촘촘하지 않은 한 바퀴
@@ -799,10 +822,10 @@
     return Object.assign({ base: 25, define: 60, volShare: 55, volPoint: 75, weight: 35 }, extra || {}, o);
   };
   STYLE_SPECS[ID] = {
-    name: 'Long blowout waves · Curtain bangs · Big bottom curls',
+    name: 'Long blowout waves · Center part · Big bottom curls',
     tipAt: {                 // 두상 높이 기준 끝 위치 (1.0 ≈ 턱선)
-      front: 0.78,           // 커튼뱅: 코끝~윗입술
-      crown: 1.08,           // 레이어 — 위쪽이 짧아야 끝 웨이브가 층층이 보임
+      front: 1.00,           // 얼굴선 레이어: 턱선 (앞머리 없음)
+      crown: 1.15,           // 레이어 — 위쪽이 짧아야 끝 웨이브가 층층이 보임
       temple: 1.18,          // 얼굴 감싸는 층
       side: 1.42,            // 어깨
       occipital: 1.50,
@@ -817,7 +840,7 @@
       nape:      set({ technique: 'uniform', elevation: 25, texture: 35, density: 100, line: 50, curlDir: 20 })
     },
     perm: { curl: 42, wave: 95 },     // wave 95 = 굵은 롤
-    styling: { sweep: 0, volume: 50, flow: 30, part: 0, partAmt: 0, finish: 55, sleek: 20 },
+    styling: { sweep: 0, volume: 50, flow: 30, part: 0, partAmt: 80, finish: 55, sleek: 20 },   // part 0 = 가운데 가르마, partAmt 80 = 양옆으로 넘김(얼굴 드러남)
     globalCurl: 42,
     color: '#1E1712'
   };
@@ -825,7 +848,7 @@
   STYLES.push({
     id: ID, specId: ID,
     name: 'Blowout Waves',
-    tags: 'Long layers · Curtain bangs · Big bottom curls',
+    tags: 'Long layers · Center part · Big bottom curls',
     length: 92, curl: 42, volume: 60, colorHex: '#1E1712'
   });
   try { if (typeof RECIPE_STYLES !== 'undefined' && RECIPE_STYLES.indexOf(ID) < 0) RECIPE_STYLES.push(ID); } catch (e) {}
@@ -844,14 +867,10 @@
         },
         CURL3D_FIX: { ampGamma: 0.7 },
         VOLUME3D: { AMP: 0.16 },
-        MQ_FRINGE: {
-          tipFaceFrac: 0.5,        // 커튼뱅 가운데 끝: 눈썹에서 얼굴 높이의 절반 아래
-          lineFloorFaceFrac: 0.8,  // 양옆으로 갈수록 길게 — 커튼 모양
-          crownAllAround: false
-        }
+        MQ_FRINGE: { on: false }   // 앞머리(뱅) 없음 — 가르마로 넘긴 얼굴선 레이어
       },
       volBase: 1.0,
-      after: { front: { curl: 30 } },   // 커튼뱅은 바깥으로 넘어가는 C컬 정도
+      after: { front: { curl: 30 } },   // 얼굴선은 바깥으로 넘어가는 C컬 정도
       shade: { ao: 0.42, lumCap: 1.3, spec: 0.26, specPow: 60 }   // 블로아웃 광택 조금 더
     });
   }
