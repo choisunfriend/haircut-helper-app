@@ -302,7 +302,7 @@
     G.buildNeutralHair3D = function (cb) {
       var t0 = now();
       return nOrig.call(this, function () {
-        F.t.neutral3D = (F.t.neutral3D || 0) + (now() - t0);
+        F.t.neutral3D = Math.max(F.t.neutral3D || 0, now() - t0);  // 기다리는 쪽이 여럿이면 합치지 않고 가장 긴 것
         if (cb) return cb.apply(this, arguments);
       });
     };
