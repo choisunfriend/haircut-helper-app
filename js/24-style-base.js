@@ -553,11 +553,51 @@
       var mv = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z), ms = Math.sqrt(s.x * s.x + s.y * s.y + s.z * s.z);
       return ms > mv ? s : v;
     }
+    /* 가르마 V2 — 일자 가르마 + 양옆 정리 (2026-09-28)
+     * 문제: 원래 힘은 가르마 선 근처(가우시안 0.35rad)에서만 세서, 가르마를 옆으로 옮기면
+     *  ① 얼굴 앞 가운데 가닥은 힘을 못 받고 얼굴 위로 그대로 떨어지고
+     *  ② 선 근처 가닥만 옆으로 휘어 얼굴을 대각선으로 가로질렀습니다.
+     * 고침: 가르마 선 = 머리 좌우축에 수직인 평면 x = off·a (정면에서 곧은 한 줄, 이마→정수리).
+     *  선 양쪽의 윗머리·앞머리를 모두 "선에서 먼 쪽"으로 넘기고, 이마선 가닥은 뒤(관자놀이 쪽)로
+     *  살짝 빗겨 얼굴을 덮지 않게 합니다. 힘은 선에서 거리와 무관(바닥값 1), 정수리 뒤에서 0.
+     * 끄기: STYLE_BASE.partV2 = false (원래 엔진 식) */
+    SB.partV2 = true;
+    SB.partV2Cfg = { back: 0.55, lineSoft: 0.06, crownLo: -0.2, crownHi: 0.1, topLo: -0.1, topHi: 0.25, farFade: 0.35 };
+    function sstep(t, lo, hi) { t = clamp((t - lo) / (hi - lo), 0, 1); return t * t * (3 - 2 * t); }
+    function partPushV2(root, partVal, curlAmt, partAmt) {
+      if (!root || typeof PART3D === 'undefined') return null;
+      var E; try { E = getHeadEllipsoid(); } catch (e) { return null; }
+      if (!E) return null;
+      var pa = clamp(typeof partAmt === 'number' ? partAmt : 0, 0, 100) / 100;
+      if (!(pa > 0)) return null;
+      var C = SB.partV2Cfg, amt = Math.pow(pa, PART3D.GAMMA || 1);
+      var x = root.x, y = root.y - 0.15, z = root.z;
+      var ux = x / E.a, uy = y / E.b, uz = z / E.c, ul = Math.sqrt(ux * ux + uy * uy + uz * uz) || 1;
+      ux /= ul; uy /= ul; uz /= ul;
+      var w = sstep(uz, C.crownLo, C.crownHi) * sstep(uy, C.topLo, C.topHi);    // 앞·윗머리만, 정수리 뒤·귀 아래는 0
+      if (!(w > 0)) return null;
+      var off = clamp((-(partVal || 0) / 100) * (PART3D.MAXOFF || 0.65), -0.98, 0.98);
+      var d = ux - off, side = d >= 0 ? 1 : -1, ad = Math.abs(d);
+      w *= 0.6 + 0.4 * sstep(ad, 0, C.lineSoft);                  // 선 바로 위도 벌어지되 부드럽게
+      w *= 1 - C.farFade * sstep(ad, 0.6, 1.3);                   // 옆머리 끝쪽은 덜
+      var amp = PART3D.AMP * amt * w * (1 - 0.5 * clamp(curlAmt || 0, 0, 100) / 100);
+      if (!(amp > 1e-6)) return null;
+      var bk = C.back * sstep(uz, 0.35, 0.85);                     // 이마선 가닥 → 관자놀이 쪽(뒤)으로
+      var dx = side, dy = 0, dz = -bk;
+      var nx = x / (E.a * E.a), ny = y / (E.b * E.b), nz = z / (E.c * E.c), nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      nx /= nl; ny /= nl; nz /= nl;
+      var dot = dx * nx + dy * ny + dz * nz;
+      var tx = dx - dot * nx, ty = dy - dot * ny, tz = dz - dot * nz, tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
+      if (!(tl > 1e-6)) return null;
+      return { x: tx / tl * amp, y: ty / tl * amp, z: tz / tl * amp };
+    }
+    SB._partPushV2 = partPushV2;
     SB.partFrontOnly = false;
     wrap('partingPushHead', function (f) {
       return function (root, partVal, curlAmt, partAmt) {
-        var v = f.apply(this, arguments);
-        v = partSideSweep(v, root, partVal, curlAmt, partAmt);
+        var useV2 = SB.on && SB.partV2;
+        var v = useV2 ? partPushV2(root, partVal, curlAmt, partAmt) : f.apply(this, arguments);
+        if (!useV2) v = partSideSweep(v, root, partVal, curlAmt, partAmt);
         if (!v || !SB.partFrontOnly || !root) return v;
         var c = 1; try { c = getHeadEllipsoid().c || 1; } catch (e) {}
         var zn = root.z / c, lo = -0.15, hi = 0.15;
