@@ -600,14 +600,14 @@
      *  3단계: 컬·중력은 엔진이 이 뼈대 위에 그대로 입힙니다(STYLE_ORDER.spineFirst).
      *  가르마 세기(partAmt)만큼 원래 뼈대와 섞습니다. 끄기: STYLE_BASE.partRecomb = false */
     SB.partRecomb = true;
-    SB.partRecombCfg = { lift: 0.035, dropAt: 0.62, dropSoft: 0.22, faceX: 0.72, gain: 1.6, back: 0.35, keepShape: true };
+    SB.partRecombCfg = { lift: 0.035, dropAt: 0.62, dropSoft: 0.22, gain: 1.6, back: 0.35, keepShape: true, lineKeep: 0.14, lineKeepLen: 0.12 };
     function recombStrand(pts, partVal, curlAmt, partAmt) {
       if (!pts || pts.length < 3 || typeof PART3D === 'undefined') return null;
       var E; try { E = getHeadEllipsoid(); } catch (e) { return null; }
       if (!E) return null;
       var pa = clamp(typeof partAmt === 'number' ? partAmt : 0, 0, 100) / 100;
       if (!(pa > 0)) return null;
-      var C = SB.partV2Cfg, R = SB.partRecombCfg, CY = 0.15, r0 = pts[0];
+      var C = SB.partV2Cfg, R = SB.partRecombCfg, CY = 0.15, r0 = pts[0], i;
       function unit(q) { var ux = q.x / E.a, uy = (q.y - CY) / E.b, uz = q.z / E.c, l = Math.sqrt(ux * ux + uy * uy + uz * uz) || 1; return { x: ux / l, y: uy / l, z: uz / l, r: l }; }
       var u0 = unit(r0);
       var w = sstep(u0.z, C.crownLo, C.crownHi) * sstep(u0.y, C.topLo, C.topHi);
@@ -624,13 +624,18 @@
       function onShell(q) { var u = unit(q); return { x: u.x * shell * E.a, y: CY + u.y * shell * E.b, z: u.z * shell * E.c }; }
       var out = [{ x: r0.x, y: r0.y, z: r0.z }], p = { x: r0.x, y: r0.y, z: r0.z }, onScalp = true, kTop = -1;
       var bk = R.back * sstep(u0.z, 0.35, 0.85);
+      var keepOrig = 1 - sstep(Math.abs(u0.x - off), R.lineKeep * 0.3, R.lineKeep), nOrig = Math.max(2, Math.round(n * R.lineKeepLen));
       for (i = 1; i < n; i++) {
         var u = unit(p), nr = normalAt(p);
         // 선에서 먼 쪽으로 눕혀 가다가(옆으로), 관자놀이를 지나면 아래로
         var down = sstep(u.x * side, R.dropAt - R.dropSoft, R.dropAt + R.dropSoft);
         down = Math.max(down, sstep(-u.y, -0.35, 0.05));            // 이미 두상 옆·아래면 아래로
-        if (p.z > 0) down = Math.min(down, sstep(Math.abs(p.x) / E.a, R.faceX - 0.12, R.faceX));   // 얼굴 폭 안에서는 아직 내려가지 않음
         var dx = side * (1 - down), dy = -down, dz = -bk * (1 - down);
+        if (keepOrig > 0 && i <= nOrig) {                                 // 가르마 선 바로 옆: 처음 몇 점은 원래 결로 → 가르마가 벌어져 보이지 않게
+          var od = { x: pts[i].x - pts[i - 1].x, y: pts[i].y - pts[i - 1].y, z: pts[i].z - pts[i - 1].z }, ol = Math.hypot(od.x, od.y, od.z) || 1;
+          var dl0 = Math.hypot(dx, dy, dz) || 1, m = keepOrig * (1 - (i - 1) / nOrig);
+          dx = dx / dl0 * (1 - m) + od.x / ol * m; dy = dy / dl0 * (1 - m) + od.y / ol * m; dz = dz / dl0 * (1 - m) + od.z / ol * m;
+        }
         if (onScalp) {
           var dot = dx * nr.x + dy * nr.y + dz * nr.z;
           if (dot > 0 || nr.y > -0.05) { dx -= dot * nr.x; dy -= dot * nr.y; dz -= dot * nr.z; }
@@ -641,25 +646,59 @@
         if (onScalp) q = onShell(q);
         
         out.push(q); p = q;
-        if (kTop < 0 && (!onScalp || down > 0.9)) kTop = i;              // 윗부분(두피 위 빗질) 끝
+        if (kTop < 0 && (!onScalp || down > 0.98)) kTop = i;              // 윗부분(두피 위 빗질) 끝
       }
       // 아래쪽은 원래 가닥 모양 그대로 — 윗부분이 끝난 자리에 옮겨 붙입니다(원래 볼륨·웨이브·실루엣 유지).
-      if (R.keepShape) {
-        if (kTop < 0) kTop = n - 1;
+      if (kTop < 0) kTop = n - 1;
+      // 윗부분: 원래 ↔ 새로 빗은 길을 세기(s)만큼 섞음
+      for (i = 1; i <= kTop; i++) {
+        var a0 = pts[i], b0 = out[i];
+        out[i] = { x: a0.x + (b0.x - a0.x) * s, y: a0.y + (b0.y - a0.y) * s, z: a0.z + (b0.z - a0.z) * s };
+      }
+      // 아랫부분: 위치 제한 없이 "방향"으로만 이어 붙임.
+      //  원래 가닥의 마디(방향·길이)를 그대로 쓰되, 윗부분이 끝난 곳의 새 방향에 맞게 통째로 회전합니다.
+      //  → 원래 웨이브·퍼짐은 유지되고, 새 가르마 결에서 자연스럽게 흘러내립니다(얼굴 쪽으로 오는 가닥도 결대로면 그대로).
+      if (R.keepShape && kTop < n - 1) {
+        var k0 = Math.max(1, kTop);
+        var kb = k0 - 1, ke = Math.min(n - 1, kTop + Math.max(3, Math.round(n * 0.2)));   // 마디 몇 개 평균 방향(웨이브 흔들림 무시)
+        var nd = { x: out[k0].x - out[kb].x, y: out[k0].y - out[kb].y, z: out[k0].z - out[kb].z };
+        var od2 = { x: pts[ke].x - pts[kTop].x, y: pts[ke].y - pts[kTop].y, z: pts[ke].z - pts[kTop].z };
         var tail = 0; for (i = kTop; i < n; i++) tail += (pts[i].x - pts[kTop].x);
-        var mir = tail * side < 0;                                   // 원래 반대쪽으로 흐르던 가닥은 좌우 뒤집어서
-        var ox = pts[kTop].x, bx = out[kTop].x, by = out[kTop].y - pts[kTop].y, bz = out[kTop].z - pts[kTop].z;
+        var mir = s > 0.5 && tail * side < 0;                        // 원래 반대쪽으로 흐르던 가닥은 좌우 뒤집어서
+        if (mir) od2.x = -od2.x;
+        // 중력 방향(세로)은 그대로 두고 수평 방향(방위각)만 돌림 — 빗질은 결의 방향을 바꾸고, 처짐은 중력이 정함
+        var rot = rotBetween({ x: od2.x, y: 0, z: od2.z }, { x: nd.x, y: 0, z: nd.z }, s);
+        var pp = out[kTop];
         for (i = kTop + 1; i < n; i++) {
-          var dx0 = pts[i].x - ox; if (mir) dx0 = -dx0;
-          out[i] = { x: bx + dx0, y: pts[i].y + by, z: pts[i].z + bz };
+          var sg2 = { x: pts[i].x - pts[i - 1].x, y: pts[i].y - pts[i - 1].y, z: pts[i].z - pts[i - 1].z };
+          if (mir) sg2.x = -sg2.x;
+          var r2 = rot(sg2);
+          pp = { x: pp.x + r2.x, y: pp.y + r2.y, z: pp.z + r2.z };
+          out[i] = pp;
+        }
+      } else if (s < 0.999) {
+        for (i = kTop + 1; i < n; i++) {
+          var a1 = pts[i], b1 = out[i];
+          out[i] = { x: a1.x + (b1.x - a1.x) * s, y: a1.y + (b1.y - a1.y) * s, z: a1.z + (b1.z - a1.z) * s };
         }
       }
-      if (s >= 0.999) return out;
-      for (i = 0; i < n; i++) {
-        var a = pts[i], b = out[i];
-        out[i] = { x: a.x + (b.x - a.x) * s, y: a.y + (b.y - a.y) * s, z: a.z + (b.z - a.z) * s };
-      }
       return out;
+    }
+    // a 방향을 b 방향으로 돌리는 회전(세기 s만큼) — 로드리게스
+    function rotBetween(a, b, s) {
+      var al = Math.hypot(a.x, a.y, a.z), bl = Math.hypot(b.x, b.y, b.z);
+      if (!(al > 1e-9) || !(bl > 1e-9)) return function (v) { return v; };
+      var ax = a.x / al, ay = a.y / al, az = a.z / al, bx = b.x / bl, by = b.y / bl, bz = b.z / bl;
+      var kx = ay * bz - az * by, ky = az * bx - ax * bz, kz = ax * by - ay * bx, sn = Math.hypot(kx, ky, kz), cs = ax * bx + ay * by + az * bz;
+      if (!(sn > 1e-9)) return function (v) { return v; };
+      var th = Math.atan2(sn, cs) * clamp(s, 0, 1); kx /= sn; ky /= sn; kz /= sn;
+      var c = Math.cos(th), si = Math.sin(th);
+      return function (v) {
+        var d = kx * v.x + ky * v.y + kz * v.z;
+        return { x: v.x * c + (ky * v.z - kz * v.y) * si + kx * d * (1 - c),
+                 y: v.y * c + (kz * v.x - kx * v.z) * si + ky * d * (1 - c),
+                 z: v.z * c + (kx * v.y - ky * v.x) * si + kz * d * (1 - c) };
+      };
     }
     SB._recomb = recombStrand;
     wrap('partStrand3D', function (f) {
