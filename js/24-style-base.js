@@ -553,9 +553,54 @@
       var mv = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z), ms = Math.sqrt(s.x * s.x + s.y * s.y + s.z * s.z);
       return ms > mv ? s : v;
     }
+    /* 일자 가르마 (partClean)
+     * 원래 힘은 가르마 선 주변 가우시안(0.35rad)이라, 가르마를 옆으로 옮기면
+     * 원래 가운데 가르마 자리~새 선 사이 가닥이 힘을 못 받고 얼굴 앞으로 쏟아졌습니다.
+     * 여기서는 뿌리가 선(ux = off)의 어느 쪽인지만으로 방향을 정하고(좌/우 딱 나눔),
+     * 세기는 선에서 멀어져도 천천히만 줄여 양옆이 고르게 넘어가게 합니다.
+     * 뿌리 자체는 움직이지 않고 매번 원본 가닥에서 다시 계산하므로 되돌리면 원상복구됩니다.
+     * 끄기: STYLE_BASE.partClean = false */
+    SB.partClean = true;
+    SB.partCleanCfg = { edge: 0.03, farLo: 0.25, farHi: 0.95, farMin: 0.45, backLo: -0.35, backHi: 0.05, topLo: -0.05, topHi: 0.35 };
+    function smooth01(t) { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); }
+    function partCleanPush(root, partVal, curlAmt, partAmt) {
+      if (!root || typeof PART3D === 'undefined') return null;
+      var E; try { E = getHeadEllipsoid(); } catch (e) { return null; }
+      if (!E) return null;
+      var pa = clamp(typeof partAmt === 'number' ? partAmt : 0, 0, 100) / 100;
+      if (!(pa > 0)) return null;
+      var C = SB.partCleanCfg, amt = Math.pow(pa, PART3D.GAMMA || 1);
+      var x = root.x, y = root.y - 0.15, z = root.z;
+      var ux = x / E.a, uy = y / E.b, uz = z / E.c, ul = Math.sqrt(ux * ux + uy * uy + uz * uz) || 1;
+      ux /= ul; uy /= ul; uz /= ul;
+      // 두피 윗부분만 (귀 아래 옆·뒷머리는 건드리지 않음)
+      var top = smooth01((uy - C.topLo) / (C.topHi - C.topLo));
+      // 정수리 뒤로 갈수록 약하게 → 뒷머리 가운데가 갈라지지 않음
+      var fb = smooth01((uz - C.backLo) / (C.backHi - C.backLo));
+      var w = top * fb; if (!(w > 1e-4)) return null;
+      var off = clamp((-(partVal || 0) / 100) * (PART3D.MAXOFF || 0.65), -0.98, 0.98);
+      var d = ux - off, ad = Math.abs(d), side = d >= 0 ? 1 : -1;
+      // 선 바로 위는 아주 좁게만 약하게(선이 깔끔하게), 멀어지면 천천히 줄되 바닥값 유지
+      var edge = smooth01(ad / C.edge);
+      var far = 1 - (1 - C.farMin) * smooth01((ad - C.farLo) / (C.farHi - C.farLo));
+      var amp = PART3D.AMP * amt * w * edge * far * (1 - 0.5 * clamp(curlAmt || 0, 0, 100) / 100);
+      if (!(amp > 1e-6)) return null;
+      // 옆(±x) 방향을 두피 접평면에 투영 → 두피를 따라 옆으로 빗김
+      var nx = x / (E.a * E.a), ny = y / (E.b * E.b), nz = z / (E.c * E.c), nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      nx /= nl; ny /= nl; nz /= nl;
+      var dot = side * nx;
+      var tx = side - dot * nx, ty = -dot * ny, tz = -dot * nz, tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
+      if (tl < 1e-6) return null;
+      // 약간 아래(-y)로 기울여 얼굴 쪽이 아니라 귀 쪽으로 떨어지게
+      tx /= tl; ty = ty / tl - 0.25; tz /= tl;
+      var d2 = tx * nx + ty * ny + tz * nz; tx -= d2 * nx; ty -= d2 * ny; tz -= d2 * nz;
+      tl = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1;
+      return { x: tx / tl * amp, y: ty / tl * amp, z: tz / tl * amp };
+    }
     SB.partFrontOnly = false;
     wrap('partingPushHead', function (f) {
       return function (root, partVal, curlAmt, partAmt) {
+        if (SB.partClean) return partCleanPush(root, partVal, curlAmt, partAmt);
         var v = f.apply(this, arguments);
         v = partSideSweep(v, root, partVal, curlAmt, partAmt);
         if (!v || !SB.partFrontOnly || !root) return v;
