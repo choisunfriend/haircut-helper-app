@@ -553,51 +553,6 @@
       var mv = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z), ms = Math.sqrt(s.x * s.x + s.y * s.y + s.z * s.z);
       return ms > mv ? s : v;
     }
-    /* 빗으로 가르기 (2026-09-28 시험) — 가르마 선에서 빗으로 가른 뒤 양쪽으로 넘긴 결과를 흉내
-     * 원래 가르마 힘은 가닥 길이 앞쪽 35%를 지나며 서서히 걸려서, 정수리에서 흘러내리는 가닥이
-     * 선을 먼저 넘은 뒤에야 꺾였습니다(하네스: 정수리 위에서 선을 넘은 가닥 195개 중 37~63개).
-     * 그래서 partStrand3D 뒤에 한 단계를 더 겁니다:
-     *   ① 선 근처(폭 band) 가닥은 <b>뿌리에서 바로</b>(ramp 3%) 선 반대쪽으로 꺾음 = 빗질로 가름
-     *   ② 그래도 정수리 위에서 선을 넘어간 점은 선 바로 옆(margin)으로 되돌림 = 빗이 넘어온 머리를 걷어냄(정수리 위 점만)
-     * 하네스(같은 가닥 195개): 선을 넘은 가닥 가운데 63→0 · 한쪽 가르마 37→3. 선 위치·양쪽 방향은 그대로.
-     * 끄기 STYLE_BASE.combPart=false (예전 동작) · 세기 STYLE_BASE.combK */
-    SB.combPart = true;
-    SB.combK = { band: 0.35, turn: 1.0, ramp: 0.03, tail: 0.6, topLo: 0.2, topHi: 0.55, margin: 0.03, noCross: true };
-    wrap('partStrand3D', function (f) {
-      return function (pts, partVal, curlAmt, partAmt) {
-        var out = f.apply(this, arguments);
-        if (!SB.combPart || !pts || pts.length < 2 || typeof PART3D === 'undefined') return out;
-        try { return combPartAfter(out, pts[0], partVal || 0, curlAmt, partAmt, SB.combK); }
-        catch (e) { return out; }
-      };
-    });
-    function combPartAfter(pts, r, partVal, curlAmt, partAmt, K) {
-      var pa = clamp(typeof partAmt === 'number' ? partAmt : 0, 0, 100) / 100;
-      if (!(pa > 0) || typeof bendStrandToDir3D !== 'function' || typeof scalpDirAt !== 'function') return pts;
-      var E = getHeadEllipsoid(); if (!E) return pts;
-      var amt = Math.pow(pa, PART3D.GAMMA || 1);
-      var x = r.x, y = r.y - 0.15, z = r.z;
-      var ux = x / E.a, uy = y / E.b, uz = z / E.c, ul = Math.sqrt(ux * ux + uy * uy + uz * uz) || 1;
-      ux /= ul; uy /= ul; uz /= ul;
-      var off = clamp((-partVal / 100) * PART3D.MAXOFF, -0.98, 0.98);
-      var d = ux - off, side = d >= 0 ? 1 : -1;
-      var along = clamp((uz - (PART3D.FRONT - PART3D.FRONT_SOFT)) / PART3D.FRONT_SOFT, 0, 1);
-      var top = clamp((uy - K.topLo) / (K.topHi - K.topLo), 0, 1);
-      var band = Math.exp(-(d / K.band) * (d / K.band));
-      var w = amt * along * top * band * (1 - 0.5 * clamp(curlAmt || 0, 0, 100) / 100);
-      if (!(w > 0.01)) return pts;
-      var out = bendStrandToDir3D(pts, scalpDirAt({ x: side, y: 0, z: 0 }, E, Math.min(1, w * K.turn)), K.ramp, K.tail, E, curlAmt);
-      if (K.noCross) {
-        var lim = off * E.a + side * K.margin * E.a, o2 = null;
-        for (var i = 1; i < out.length; i++) {
-          var p = out[i];
-          if ((p.y - 0.15) / E.b > K.topLo && (p.x - lim) * side < 0) {   // 정수리 위에서만 — 얼굴 앞으로 내려온 머리는 안 건드림
-            if (!o2) o2 = out.slice(); o2[i] = { x: lim, y: p.y, z: p.z }; }
-        }
-        if (o2) out = o2;
-      }
-      return out;
-    }
     SB.partFrontOnly = false;
     wrap('partingPushHead', function (f) {
       return function (root, partVal, curlAmt, partAmt) {
