@@ -1,0 +1,155 @@
+/* 31-garma-perm.js
+ * 1) 가르마펌 스타일 추가 (STYLES / RECIPE_STYLES / STYLE_SPECS)
+ * 2) 모발 상태(HAIR_CONDITIONS): 같은 슬라이더 값이라도 모발 상태에 따라 결과가 달라짐
+ *    - 길이 슬라이더 = 당겨서 편 실제 커트 길이. 보이는 길이 = 편 길이 × 컬 수축률
+ *    - 펌 컬 세기 = 펌 약 세기 × 모발의 펌 흡수율 + 원래 곱슬기
+ *    - 짧게 자를수록 무게가 빠져 컬이 더 살아남 (곱슬일수록 크게)
+ *    - 섹션별 컬 배율(스타일이 지정): 가르마펌은 옆·뒷머리를 다운펌처럼 눌러둠
+ * index.html에서 30-saved-photos.js 다음에 불러옵니다.
+ */
+(function () {
+  'use strict';
+
+  // ---------- 1. 모발 상태 ----------
+  // naturalCurl  : 펌 없이도 있는 곱슬기 (0~100)
+  // permTake     : 펌 약 세기가 실제 컬로 나오는 비율 (굵은 직모는 잘 안 나옴, 손상모는 잘 나옴)
+  // shrinkMax    : 컬 100일 때 보이는 길이가 줄어드는 최대 비율 (0.5 = 절반 길이로 보임)
+  // weightRelease: 짧게 잘랐을 때 컬이 살아나는 정도
+  // volumeGain   : 층(elevation)을 냈을 때 부피가 커지는 정도
+  const HAIR_CONDITIONS = {
+    straight_coarse: { label: 'Straight (coarse)', naturalCurl: 0,  permTake: 0.75, shrinkMax: 0.40, weightRelease: 0.10, volumeGain: 0.9 },
+    straight:        { label: 'Straight',      naturalCurl: 0,  permTake: 0.90, shrinkMax: 0.45, weightRelease: 0.15, volumeGain: 1.0 },
+    wavy:            { label: 'Wavy',    naturalCurl: 30, permTake: 1.00, shrinkMax: 0.50, weightRelease: 0.35, volumeGain: 1.2 },
+    curly:           { label: 'Curly',      naturalCurl: 60, permTake: 1.00, shrinkMax: 0.55, weightRelease: 0.55, volumeGain: 1.45 },
+    damaged:         { label: 'Damaged (bleached / over-permed)', naturalCurl: 10, permTake: 1.15, shrinkMax: 0.50, weightRelease: 0.25, volumeGain: 1.1 }
+  };
+  const CONDITION_CFG = {
+    enabled: true,
+    // 3D 가닥 시뮬레이션이 이미 컬로 길이를 줄여 그린다면 false로 두어 이중 수축을 막으세요.
+    applyShrink2D: true,
+    shrinkExp: 1.3
+  };
+  if (typeof state !== 'undefined' && !state.hairCondition) state.hairCondition = 'straight';
+
+  function cond() { return HAIR_CONDITIONS[(state && state.hairCondition)] || HAIR_CONDITIONS.straight; }
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  /** 섹션의 실제 컬: 펌 약 세기 → 모발 상태 → 섹션 배율 → 커트 길이에 따른 무게 해방 */
+  function effectiveCurl(permCurl, sec, rawLenRatio) {
+    const c = cond();
+    const scale = sectionCurlScale(sec);
+    let curl = (permCurl * c.permTake) * scale + c.naturalCurl * (0.6 + 0.4 * scale);
+    const shorter = clamp(1 - rawLenRatio, 0, 1);          // 기본 길이 대비 얼마나 짧아졌나
+    curl *= 1 + c.weightRelease * shorter;
+    return clamp(curl, 0, 100);
+  }
+  /** 컬 때문에 보이는 길이가 줄어드는 비율 (직모 1.0) */
+  function shrinkFactor(curl) {
+    return 1 - cond().shrinkMax * Math.pow(curl / 100, CONDITION_CFG.shrinkExp);
+  }
+  /** 커트 길이 cm(편 길이) → 보이는 길이 cm. UI 표시용 */
+  function visibleLengthCm(stretchedCm, permCurl, sec, rawLenRatio) {
+    return stretchedCm * shrinkFactor(effectiveCurl(permCurl, sec, rawLenRatio == null ? 1 : rawLenRatio));
+  }
+
+  // 스타일별 섹션 컬 배율 (가르마펌: 옆·뒤는 다운펌 느낌으로 눌림)
+  const SECTION_CURL_SCALE = {
+    side_part_perm: { front: 1.0, crown: 0.9, temple: 0.55, side: 0.2, occipital: 0.45, nape: 0.15 }
+  };
+  function sectionCurlScale(sec) {
+    const m = SECTION_CURL_SCALE[state && state._activeSpecId];
+    return m && typeof m[sec] === 'number' ? m[sec] : 1;
+  }
+
+  // ---------- 2. 렌더 리졸버 감싸기 ----------
+  if (typeof createColumnStyleResolvers === 'function') {
+    const orig = createColumnStyleResolvers;
+    window.createColumnStyleResolvers = function (opts) {
+      const r = orig.apply(this, arguments);
+      if (!CONDITION_CFG.enabled || !r) return r;
+      const baseLen = r.lengthRatioFor, baseCurl = r.curlAmtFor, baseLayer = r.cutLayerDeltaFor;
+      const curlAt = (x, sec, y) => {
+        const raw = baseLen(x, sec, y);
+        const perm = baseCurl(x, sec, y);
+        return { raw, curl: effectiveCurl(perm, sec, Math.min(1, raw)) };
+      };
+      r.curlAmtFor = (x, sec, y) => curlAt(x, sec, y).curl;
+      r.lengthRatioFor = (x, sec, y) => {
+        const { raw, curl } = curlAt(x, sec, y);
+        return CONDITION_CFG.applyShrink2D ? raw * shrinkFactor(curl) : raw;
+      };
+      r.cutLayerDeltaFor = (x, sec, y) => {
+        const d = baseLayer(x, sec, y);
+        const { curl } = curlAt(x, sec, y);
+        return d * (1 + (cond().volumeGain - 1) * (0.5 + curl / 200));
+      };
+      return r;
+    };
+  }
+
+  // 적용 중인 스타일 id 기록 (섹션 컬 배율용)
+  if (typeof applyStyleSpec === 'function') {
+    const origApply = applyStyleSpec;
+    window.applyStyleSpec = function (id) {
+      state._activeSpecId = id;
+      return origApply.apply(this, arguments);
+    };
+  }
+
+  // ---------- 3. 가르마펌 스타일 ----------
+  // 6:4 가르마, 앞머리는 눈썹 아래~광대 위 길이로 굵은 로드 C컬 → 가르마 반대쪽으로 흘려 넘김.
+  // 정수리 볼륨, 옆·뒤는 짧게 그라데이션 + 다운펌으로 눌러 두상 정리.
+  const GARMA = {
+    name: 'Korean side-part perm · 60/40 part · C-curl fringe · Pressed sides',
+    tipAt: { front: 0.52, crown: 0.40, temple: 0.50, side: 0.52, occipital: 0.74, nape: 0.88 },
+    cut: {
+      front:     { technique: 'uniform',     elevation: 30, texture: 45, density: 85, line: 45, curlDir: -35 },
+      crown:     { technique: 'uniform',     elevation: 80, texture: 45, density: 90, curlDir: -25 },
+      temple:    { technique: 'graduation',  elevation: 40, texture: 35, density: 80, overdirection: 25, curlDir: -10 },
+      side:      { technique: 'graduation',  elevation: 20, texture: 30, density: 70, curlDir: 0 },
+      occipital: { technique: 'graduation',  elevation: 45, texture: 35, density: 85, curlDir: -10 },
+      nape:      { technique: 'graduation',  elevation: 15, texture: 30, density: 75, line: 45, curlDir: 0 }
+    },
+    perm: { curl: 45, wave: 40 },  // 굵은 로드 C컬
+    styling: { sweep: 35, volume: 68, flow: -35, part: 45, partAmt: 70, finish: 50, sleek: 10 },
+    globalCurl: 45,
+    color: '#2B2016'
+  };
+  if (typeof STYLE_SPECS !== 'undefined' && !STYLE_SPECS.side_part_perm) STYLE_SPECS.side_part_perm = GARMA;
+  if (typeof STYLES !== 'undefined' && Array.isArray(STYLES) && !STYLES.some(s => s && s.id === 'side_part_perm')) {
+    STYLES.push({ id: 'side_part_perm', specId: 'side_part_perm', name: 'Korean Side-Part Perm',
+      tags: '60/40 side part · C-curl fringe · Down-perm sides', length: 38, curl: 45, volume: 68, colorHex: '#2B2016' });
+  }
+  if (typeof RECIPE_STYLES !== 'undefined' && Array.isArray(RECIPE_STYLES) && !RECIPE_STYLES.includes('side_part_perm')) {
+    RECIPE_STYLES.push('side_part_perm');
+  }
+
+  // ---------- 4. 조정 패널에 '모발 상태' 선택 추가 ----------
+  if (typeof buildGyControls === 'function') {
+    const origBuild = buildGyControls;
+    window.buildGyControls = function () {
+      origBuild.apply(this, arguments);
+      const host = document.getElementById('gyControls');
+      if (!host) return;
+      const box = document.createElement('div');
+      box.className = 'gy-condition';
+      box.style.cssText = 'display:flex;gap:8px;align-items:center;margin:0 0 10px;font-size:13px';
+      const opts = Object.entries(HAIR_CONDITIONS).map(([k, v]) =>
+        `<option value="${k}"${state.hairCondition === k ? ' selected' : ''}>${v.label}</option>`).join('');
+      const c = cond();
+      box.innerHTML = `<label for="gyHairCond">Hair type</label><select id="gyHairCond">${opts}</select>
+        <span style="opacity:.65">1 cm cut → ~${(visibleLengthCm(1, 45, 'front', 0.8)).toFixed(1)} cm visible · perm take ${Math.round(c.permTake * 100)}%</span>`;
+      box.querySelector('select').onchange = e => {
+        state.hairCondition = e.target.value;
+        window.buildGyControls();
+        if (typeof drawAdjustPreview === 'function') drawAdjustPreview();
+      };
+      host.insertBefore(box, host.firstChild);
+    };
+  }
+
+  window.HAIR_CONDITIONS = HAIR_CONDITIONS;
+  window.HAIR_CONDITION_CFG = CONDITION_CFG;
+  window.hairEffectiveCurl = effectiveCurl;
+  window.hairVisibleLengthCm = visibleLengthCm;
+})();
