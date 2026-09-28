@@ -54,7 +54,7 @@
 
   // 스타일별 섹션 컬 배율 (가르마펌: 옆·뒤는 다운펌 느낌으로 눌림)
   const SECTION_CURL_SCALE = {
-    side_part_perm: { front: 1.0, crown: 0.9, temple: 0.55, side: 0.2, occipital: 0.45, nape: 0.15 }
+    side_part_perm: { front: 1.0, crown: 0.85, temple: 0.35, side: 0.0, occipital: 0.3, nape: 0.0 }
   };
   function sectionCurlScale(sec) {
     const m = SECTION_CURL_SCALE[state && state._activeSpecId];
@@ -110,8 +110,17 @@
       occipital: { technique: 'graduation',  elevation: 45, texture: 35, density: 85, curlDir: -10 },
       nape:      { technique: 'graduation',  elevation: 15, texture: 30, density: 75, line: 45, curlDir: 0 }
     },
-    perm: { curl: 45, wave: 40 },  // 굵은 로드 C컬
-    styling: { sweep: 35, volume: 68, flow: -35, part: 45, partAmt: 70, finish: 50, sleek: 10 },
+    perm: { curl: 45, wave: 45 },
+    // 참고 영상(0:00~0:38): 옆·뒤는 로드 없이 짧게, 윗머리만 와인딩.
+    // 앞 헤어라인은 굵은 로드(분홍)로 뒤쪽(정수리 방향) 말기 → 얼굴에서 멀어지는 C컬,
+    // 정수리~탑은 중간 로드(파랑)를 가로로 줄지어 뒤로 말기, 가르마 쪽 라인은 사선 배열.
+    rods: {
+      front:     { size: 'large',  dir: 'back', rows: 1, lift: 'on-base' },
+      crown:     { size: 'medium', dir: 'back', rows: 3, lift: 'on-base' },
+      temple:    { size: 'medium', dir: 'back-diagonal', rows: 1, lift: 'off-base' },
+      side: null, occipital: null, nape: null
+    },
+    styling: { sweep: 55, volume: 70, flow: -30, part: 45, partAmt: 70, finish: 50, sleek: 15 },
     globalCurl: 45,
     color: '#2B2016'
   };
