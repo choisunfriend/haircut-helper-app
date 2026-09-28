@@ -553,11 +553,57 @@
       var mv = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z), ms = Math.sqrt(s.x * s.x + s.y * s.y + s.z * s.z);
       return ms > mv ? s : v;
     }
+    /* 가르마 다시 짜기 (2026-09-28)
+     * 문제: 가르마 선이 앞~정수리까지 같은 x 위치(일자)로 평행이동만 했고, 미는 힘이 선 근처(가우시안)에만 있어서
+     *       가르마를 옮기면 원래 반대편이던 가닥(얼굴 앞 가운데)이 새 편으로 넘어가지 않고 얼굴 위를 가로질렀습니다.
+     * 고친 점: ① 가르마 선을 정수리(고정점 쪽)→앞이마(최대 이동)로 휘는 곡선으로.
+     *          ② 뿌리마다 새 선의 어느 쪽인지 다시 판정해 좌/우 소속을 매번 새로 정함.
+     *          ③ 선 근처 강한 힘 + 앞·정수리 전체에 바닥 힘 → 모든 가닥이 자기 편으로 넘어감.
+     * 끄기: STYLE_BASE.part2 = false (예전 동작) */
+    SB.part2 = true;
+    SB.part2Cfg = { crownKeep: 0.3, crownZ: -0.15, frontZ: 0.85, sigma: 0.3, floor: 0.55, deadband: 0.03 };
+    function partLineOff(off, uz) {
+      var C = SB.part2Cfg, t = clamp((uz - C.crownZ) / (C.frontZ - C.crownZ), 0, 1);
+      t = t * t * (3 - 2 * t);
+      return off * (C.crownKeep + (1 - C.crownKeep) * t);
+    }
+    function partingPush2(root, partVal, curlAmt, partAmt) {
+      if (!root) return null;
+      var pa = clamp(typeof partAmt === 'number' ? partAmt : 0, 0, 100);
+      var amt = typeof sliderResponse === 'function' ? sliderResponse(pa, PART3D.GAMMA) : Math.pow(pa / 100, PART3D.GAMMA || 1);
+      if (!(amt > 0)) return null;
+      var E; try { E = getHeadEllipsoid(); } catch (e) { return null; }
+      if (!E) return null;
+      var C = SB.part2Cfg;
+      var x = root.x, y = root.y - 0.15, z = root.z;
+      var ux = x / E.a, uy = y / E.b, uz = z / E.c, ul = Math.sqrt(ux * ux + uy * uy + uz * uz) || 1;
+      ux /= ul; uy /= ul; uz /= ul;
+      // 두피 윗부분만 (귀 아래·목덜미는 0)
+      var top = clamp((uy - PART3D.TOP_LO) / (PART3D.TOP_HI - PART3D.TOP_LO), 0, 1);
+      // 앞이마~정수리까지만, 뒤통수로 안 넘어가게
+      var fb = clamp((uz - (C.crownZ - 0.15)) / 0.3, 0, 1); fb = fb * fb * (3 - 2 * fb);
+      var w = top * fb; if (!(w > 0)) return null;
+      var off = clamp((-partVal / 100) * (PART3D.MAXOFF || 0.65), -0.98, 0.98);
+      var lineX = partLineOff(off, uz);
+      var d = ux - lineX, side = d >= 0 ? 1 : -1;
+      var nearG = Math.exp(-(d / C.sigma) * (d / C.sigma));
+      var mag = Math.max(nearG, C.floor) * clamp(Math.abs(d) / C.deadband, 0, 1);   // 선 바로 위는 부드럽게 0
+      var amp = PART3D.AMP * amt * w * mag * (1 - 0.5 * clamp(curlAmt || 0, 0, 100) / 100);
+      if (!(amp > 1e-6)) return null;
+      // 곡선 가르마에 수직인 방향: 선의 기울기 dLine/duz 만큼 앞뒤 성분을 섞음
+      var slope = (partLineOff(off, uz + 0.02) - partLineOff(off, uz - 0.02)) / 0.04;
+      var dx = side, dz = -side * slope * (E.c / E.a);
+      var nx = x / (E.a * E.a), ny = y / (E.b * E.b), nz = z / (E.c * E.c), nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      nx /= nl; ny /= nl; nz /= nl;
+      var dot = dx * nx + dz * nz;
+      var tx = dx - dot * nx, ty = -dot * ny, tz = dz - dot * nz, tl = Math.sqrt(tx * tx + ty * ty + tz * tz) || 1;
+      return { x: tx / tl * amp, y: ty / tl * amp, z: tz / tl * amp };
+    }
+    SB._partingPush2 = partingPush2;   // 점검용
     SB.partFrontOnly = false;
     wrap('partingPushHead', function (f) {
       return function (root, partVal, curlAmt, partAmt) {
-        var v = f.apply(this, arguments);
-        v = partSideSweep(v, root, partVal, curlAmt, partAmt);
+        var v = SB.part2 ? partingPush2(root, partVal, curlAmt, partAmt) : partSideSweep(f.apply(this, arguments), root, partVal, curlAmt, partAmt);
         if (!v || !SB.partFrontOnly || !root) return v;
         var c = 1; try { c = getHeadEllipsoid().c || 1; } catch (e) {}
         var zn = root.z / c, lo = -0.15, hi = 0.15;
