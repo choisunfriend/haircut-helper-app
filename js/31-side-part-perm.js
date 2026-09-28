@@ -38,6 +38,8 @@
   function effectiveCurl(permCurl, sec, rawLenRatio) {
     const c = cond();
     const scale = sectionCurlScale(sec);
+    const spec = (typeof STYLE_SPECS !== 'undefined' && state) ? STYLE_SPECS[state._activeSpecId] : null;
+    if (spec && typeof spec.finishCurl === 'number' && state.hairFinish !== 'wet') permCurl *= spec.finishCurl;
     let curl = (permCurl * c.permTake) * scale + c.naturalCurl * (0.6 + 0.4 * scale);
     const shorter = clamp(1 - rawLenRatio, 0, 1);          // 기본 길이 대비 얼마나 짧아졌나
     curl *= 1 + c.weightRelease * shorter;
@@ -100,17 +102,17 @@
   // 6:4 가르마, 앞머리는 눈썹 아래~광대 위 길이로 굵은 로드 C컬 → 가르마 반대쪽으로 흘려 넘김.
   // 정수리 볼륨, 옆·뒤는 짧게 그라데이션 + 다운펌으로 눌러 두상 정리.
   const GARMA = {
-    name: 'Korean side-part perm · 60/40 part · C-curl fringe · Pressed sides',
-    tipAt: { front: 0.52, crown: 0.40, temple: 0.50, side: 0.52, occipital: 0.74, nape: 0.88 },
+    name: 'Korean side-part perm · Soft part · Inward C-curl fringe · Short rounded sides',
+    tipAt: { front: 0.60, crown: 0.40, temple: 0.50, side: 0.52, occipital: 0.74, nape: 0.88 },
     cut: {
-      front:     { technique: 'uniform',     elevation: 30, texture: 45, density: 85, line: 45, curlDir: -35 },
+      front:     { technique: 'uniform',     elevation: 25, texture: 45, density: 85, line: 50, curlDir: -45 },
       crown:     { technique: 'uniform',     elevation: 80, texture: 45, density: 90, curlDir: -25 },
       temple:    { technique: 'graduation',  elevation: 40, texture: 35, density: 80, overdirection: 25, curlDir: -10 },
       side:      { technique: 'graduation',  elevation: 20, texture: 30, density: 70, curlDir: 0 },
       occipital: { technique: 'graduation',  elevation: 45, texture: 35, density: 85, curlDir: -10 },
       nape:      { technique: 'graduation',  elevation: 15, texture: 30, density: 75, line: 45, curlDir: 0 }
     },
-    perm: { curl: 45, wave: 45 },
+    perm: { curl: 70, wave: 45 },   // 젖은 상태 컬. 드라이 후 × finishCurl ≈ 38
     // 참고 영상(0:00~0:38): 옆·뒤는 로드 없이 짧게, 윗머리만 와인딩.
     // 앞 헤어라인은 굵은 로드(분홍)로 뒤쪽(정수리 방향) 말기 → 얼굴에서 멀어지는 C컬,
     // 정수리~탑은 중간 로드(파랑)를 가로로 줄지어 뒤로 말기, 가르마 쪽 라인은 사선 배열.
@@ -120,18 +122,33 @@
       temple:    { size: 'medium', dir: 'back-diagonal', rows: 1, lift: 'off-base' },
       side: null, occipital: null, nape: null
     },
-    styling: { sweep: 55, volume: 70, flow: -30, part: 45, partAmt: 70, finish: 50, sleek: 15 },
-    globalCurl: 45,
+    styling: { sweep: 20, volume: 65, flow: -45, part: 15, partAmt: 80, finish: 60, sleek: 35 },
+    // 참고 영상 후반(0:38~1:32): 열처리기로 가온 → 로드 제거 직후엔 강한 컬 →
+    // 드라이로 뿌리 볼륨 + 끝만 안말음 C로 정리. 결과는 거의 가운데(살짝 치우친) 가르마,
+    // 앞머리가 양쪽 광대 쪽으로 안으로 감기는 형태, 옆·뒤는 둥글고 짧게.
+    finishCurl: 0.55,   // 젖은 컬 대비 드라이 마무리 후 남는 컬 비율
+    process: ['wet cut', 'rod winding (top only)', 'heat processing', 'neutralize', 'rods off', 'blow-dry: root lift + inward C ends'],
+    globalCurl: 70,
     color: '#2B2016'
   };
   if (typeof STYLE_SPECS !== 'undefined' && !STYLE_SPECS.side_part_perm) STYLE_SPECS.side_part_perm = GARMA;
   if (typeof STYLES !== 'undefined' && Array.isArray(STYLES) && !STYLES.some(s => s && s.id === 'side_part_perm')) {
     STYLES.push({ id: 'side_part_perm', specId: 'side_part_perm', name: 'Korean Side-Part Perm',
-      tags: '60/40 side part · C-curl fringe · Down-perm sides', length: 38, curl: 45, volume: 68, colorHex: '#2B2016' });
+      tags: 'Soft off-center part · Inward C-curl fringe · Short rounded sides', length: 38, curl: 45, volume: 68, colorHex: '#2B2016' });
   }
   if (typeof RECIPE_STYLES !== 'undefined' && Array.isArray(RECIPE_STYLES) && !RECIPE_STYLES.includes('side_part_perm')) {
     RECIPE_STYLES.push('side_part_perm');
   }
+  // 스타일 목록은 앞선 스크립트에서 이미 그려졌으므로 다시 그림
+  function refreshStyleGrid() {
+    const g = document.getElementById('styleGrid');
+    if (g && g.children.length && !document.getElementById('style-side_part_perm') && typeof buildStyleGrid === 'function') {
+      try { buildStyleGrid(); } catch (e) { console.warn('[side-part-perm] grid refresh', e); }
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', refreshStyleGrid);
+  else refreshStyleGrid();
+  window.addEventListener('load', refreshStyleGrid);
 
   // ---------- 4. 조정 패널에 '모발 상태' 선택 추가 ----------
   if (typeof buildGyControls === 'function') {
