@@ -592,6 +592,73 @@
       return { x: tx / tl * amp, y: ty / tl * amp, z: tz / tl * amp };
     }
     SB._partPushV2 = partPushV2;
+
+    /* 가르마 V3 — 가닥 다시 빗기 (2026-09-28)
+     *  1단계: 정수리~앞이마 가르마 선을 기준으로 뿌리 방향을 양쪽이 서로 반대(선에서 먼 쪽)가 되게 뒤집습니다.
+     *  2단계: 그 방향으로 두피를 따라 눕혀 빗고(살짝 뜬 채), 관자놀이·옆머리에 닿으면 아래로 꺾어
+     *         얼굴 옆으로 떨어지게 가닥 뼈대를 새로 만듭니다(길이·점 개수 그대로).
+     *  3단계: 컬·중력은 엔진이 이 뼈대 위에 그대로 입힙니다(STYLE_ORDER.spineFirst).
+     *  가르마 세기(partAmt)만큼 원래 뼈대와 섞습니다. 끄기: STYLE_BASE.partRecomb = false */
+    SB.partRecomb = true;
+    SB.partRecombCfg = { lift: 0.035, dropAt: 0.62, dropSoft: 0.22, faceX: 0.72, gain: 1.6, back: 0.35 };
+    function recombStrand(pts, partVal, curlAmt, partAmt) {
+      if (!pts || pts.length < 3 || typeof PART3D === 'undefined') return null;
+      var E; try { E = getHeadEllipsoid(); } catch (e) { return null; }
+      if (!E) return null;
+      var pa = clamp(typeof partAmt === 'number' ? partAmt : 0, 0, 100) / 100;
+      if (!(pa > 0)) return null;
+      var C = SB.partV2Cfg, R = SB.partRecombCfg, CY = 0.15, r0 = pts[0];
+      function unit(q) { var ux = q.x / E.a, uy = (q.y - CY) / E.b, uz = q.z / E.c, l = Math.sqrt(ux * ux + uy * uy + uz * uz) || 1; return { x: ux / l, y: uy / l, z: uz / l, r: l }; }
+      var u0 = unit(r0);
+      var w = sstep(u0.z, C.crownLo, C.crownHi) * sstep(u0.y, C.topLo, C.topHi);
+      if (!(w > 0.02)) return null;
+      var off = clamp((-(partVal || 0) / 100) * (PART3D.MAXOFF || 0.65), -0.98, 0.98);
+      var side = u0.x - off >= 0 ? 1 : -1;
+      var s = clamp(Math.pow(pa, PART3D.GAMMA || 1) * w * R.gain, 0, 1);
+      if (!(s > 0.02)) return null;
+      var n = pts.length, L = 0, i;
+      for (i = 1; i < n; i++) L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z);
+      if (!(L > 1e-6)) return null;
+      var h = L / (n - 1), shell = Math.max(u0.r, 1) * (1 + R.lift);
+      function normalAt(q) { var nx = q.x / (E.a * E.a), ny = (q.y - CY) / (E.b * E.b), nz = q.z / (E.c * E.c), l = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1; return { x: nx / l, y: ny / l, z: nz / l }; }
+      function onShell(q) { var u = unit(q); return { x: u.x * shell * E.a, y: CY + u.y * shell * E.b, z: u.z * shell * E.c }; }
+      var out = [{ x: r0.x, y: r0.y, z: r0.z }], p = { x: r0.x, y: r0.y, z: r0.z }, onScalp = true;
+      var bk = R.back * sstep(u0.z, 0.35, 0.85);
+      for (i = 1; i < n; i++) {
+        var u = unit(p), nr = normalAt(p);
+        // 선에서 먼 쪽으로 눕혀 가다가(옆으로), 관자놀이를 지나면 아래로
+        var down = sstep(u.x * side, R.dropAt - R.dropSoft, R.dropAt + R.dropSoft);
+        down = Math.max(down, sstep(-u.y, -0.35, 0.05));            // 이미 두상 옆·아래면 아래로
+        if (p.z > 0) down = Math.min(down, sstep(Math.abs(p.x) / E.a, R.faceX - 0.12, R.faceX));   // 얼굴 폭 안에서는 아직 내려가지 않음
+        var dx = side * (1 - down), dy = -down, dz = -bk * (1 - down);
+        if (onScalp) {
+          var dot = dx * nr.x + dy * nr.y + dz * nr.z;
+          if (dot > 0 || nr.y > -0.05) { dx -= dot * nr.x; dy -= dot * nr.y; dz -= dot * nr.z; }
+          if (nr.y < -0.05) onScalp = false;                          // 두상 가장 넓은 곳 지나면 두피에서 떨어짐
+        }
+        var dl = Math.hypot(dx, dy, dz) || 1;
+        var q = { x: p.x + dx / dl * h, y: p.y + dy / dl * h, z: p.z + dz / dl * h };
+        if (onScalp) q = onShell(q);
+        
+        out.push(q); p = q;
+      }
+      if (s >= 0.999) return out;
+      for (i = 0; i < n; i++) {
+        var a = pts[i], b = out[i];
+        out[i] = { x: a.x + (b.x - a.x) * s, y: a.y + (b.y - a.y) * s, z: a.z + (b.z - a.z) * s };
+      }
+      return out;
+    }
+    SB._recomb = recombStrand;
+    wrap('partStrand3D', function (f) {
+      return function (pts, partVal, curlAmt, partAmt) {
+        if (SB.on && SB.partV2 && SB.partRecomb) {
+          var r = recombStrand(pts, partVal, curlAmt, partAmt);
+          if (r) return r;
+        }
+        return f.apply(this, arguments);
+      };
+    });
     SB.partFrontOnly = false;
     wrap('partingPushHead', function (f) {
       return function (root, partVal, curlAmt, partAmt) {
