@@ -600,7 +600,7 @@
      *  3단계: 컬·중력은 엔진이 이 뼈대 위에 그대로 입힙니다(STYLE_ORDER.spineFirst).
      *  가르마 세기(partAmt)만큼 원래 뼈대와 섞습니다. 끄기: STYLE_BASE.partRecomb = false */
     SB.partRecomb = true;
-    SB.partRecombCfg = { lift: 0.035, dropAt: 0.62, dropSoft: 0.22, faceX: 0.72, gain: 1.6, back: 0.35 };
+    SB.partRecombCfg = { lift: 0.035, dropAt: 0.62, dropSoft: 0.22, faceX: 0.72, gain: 1.6, back: 0.35, keepShape: true };
     function recombStrand(pts, partVal, curlAmt, partAmt) {
       if (!pts || pts.length < 3 || typeof PART3D === 'undefined') return null;
       var E; try { E = getHeadEllipsoid(); } catch (e) { return null; }
@@ -622,7 +622,7 @@
       var h = L / (n - 1), shell = Math.max(u0.r, 1) * (1 + R.lift);
       function normalAt(q) { var nx = q.x / (E.a * E.a), ny = (q.y - CY) / (E.b * E.b), nz = q.z / (E.c * E.c), l = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1; return { x: nx / l, y: ny / l, z: nz / l }; }
       function onShell(q) { var u = unit(q); return { x: u.x * shell * E.a, y: CY + u.y * shell * E.b, z: u.z * shell * E.c }; }
-      var out = [{ x: r0.x, y: r0.y, z: r0.z }], p = { x: r0.x, y: r0.y, z: r0.z }, onScalp = true;
+      var out = [{ x: r0.x, y: r0.y, z: r0.z }], p = { x: r0.x, y: r0.y, z: r0.z }, onScalp = true, kTop = -1;
       var bk = R.back * sstep(u0.z, 0.35, 0.85);
       for (i = 1; i < n; i++) {
         var u = unit(p), nr = normalAt(p);
@@ -641,6 +641,18 @@
         if (onScalp) q = onShell(q);
         
         out.push(q); p = q;
+        if (kTop < 0 && (!onScalp || down > 0.9)) kTop = i;              // 윗부분(두피 위 빗질) 끝
+      }
+      // 아래쪽은 원래 가닥 모양 그대로 — 윗부분이 끝난 자리에 옮겨 붙입니다(원래 볼륨·웨이브·실루엣 유지).
+      if (R.keepShape) {
+        if (kTop < 0) kTop = n - 1;
+        var tail = 0; for (i = kTop; i < n; i++) tail += (pts[i].x - pts[kTop].x);
+        var mir = tail * side < 0;                                   // 원래 반대쪽으로 흐르던 가닥은 좌우 뒤집어서
+        var ox = pts[kTop].x, bx = out[kTop].x, by = out[kTop].y - pts[kTop].y, bz = out[kTop].z - pts[kTop].z;
+        for (i = kTop + 1; i < n; i++) {
+          var dx0 = pts[i].x - ox; if (mir) dx0 = -dx0;
+          out[i] = { x: bx + dx0, y: pts[i].y + by, z: pts[i].z + bz };
+        }
       }
       if (s >= 0.999) return out;
       for (i = 0; i < n; i++) {
