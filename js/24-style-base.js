@@ -954,7 +954,8 @@
   'use strict';
   var G = window, SB = G.STYLE_BASE || {};
   SB.fillPartGap = true;
-  var GAP = 6;
+  // v2(09-29): 6 → 10 — 이마 앞 헤어라인의 사각 홈(폭 7~10칸)이 안 채워져 가르마 자리가 휑해 보였음
+  SB.partGapCells = 10;
   var orig = G.buildMannequinHair3D;
   if (typeof orig !== 'function') return;
   G.buildMannequinHair3D = function () {
@@ -964,6 +965,7 @@
     var OFF = (typeof EST_OFFSCALP !== 'undefined') ? EST_OFFSCALP : null;
     var isOff = function (a, i) { return OFF !== null && a && a[i] === OFF; };
     var saved = Array.prototype.slice.call(den), savedEst = est ? Array.prototype.slice.call(est) : null;
+    var GAP = SB.partGapCells || 6;
     var hair = function (j) { return !isOff(savedEst, j) && saved[j] > bald; };
     var filledLow = 0, filledOff = 0;
     // 이마 쪽(앞) 헤어라인의 파인 홈은 "두피 밖"으로 판정돼 있었음(로그: 정면 phi0.95~1.05 두피밖 12칸, 밀도0은 5칸뿐)

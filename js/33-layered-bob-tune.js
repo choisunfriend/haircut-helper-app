@@ -11,7 +11,7 @@
  *   1) 앞머리 양갈래 — temple(얼굴선) 끝이 턱선(0.98)까지 내려와 얼굴 앞에 굵은 두 가닥으로 늘어짐
  *      → 광대 높이(0.80)로 올리고, overdirection·curlDir 로 얼굴 옆·바깥으로 넘김
  *   2) 앞머리가 무거움 — 숱 통일(32번)이 front density 34→100 으로 바꿔 통뱅처럼 두꺼워짐
- *      → 시스루뱅은 예외로 22 (wavy bob 과 같은 방식: specPatch 로 적용 때 다시 넣음)
+ *      → v4: density 는 100 유지(낮추면 뿌리째 빠져 성글어짐), 얇은 느낌은 texture 80 으로
  *   3) 잔곱슬 파마처럼 보임 — wave 70(가는 로드) → 95(굵은 롤), 끝 12cm만 느슨하게
  * 끄기: 이 파일을 index.html 에서 빼면 원래 스펙 그대로입니다.
  * ======================================================================== */
@@ -72,7 +72,7 @@
         occipital: 1.06,
         nape: 1.10          // 목 중간
       });
-      Object.assign(spec.cut.front,     set({ density: 22, texture: 75, elevation: 15, line: 50, curlDir: -15 }), { volShare: 30, weight: 45 });
+      Object.assign(spec.cut.front,     set({ density: 100, texture: 80, elevation: 15, line: 50, curlDir: -15 }), { volShare: 30, weight: 45 });
       Object.assign(spec.cut.temple,    set({ density: 100, texture: 60, elevation: 60, overdirection: 60, curlDir: 45 }));
       Object.assign(spec.cut.crown,     set({ density: 100, texture: 50, elevation: 80, curlDir: 25 }), { volShare: 55, volPoint: 35 });
       Object.assign(spec.cut.side,      set({ density: 100, texture: 60, elevation: 60, curlDir: 40 }));
@@ -88,4 +88,31 @@
     }
   });
   console.log('[스타일] Layered Bob 레퍼런스 맞춤 적용 (앞머리 시스루 · 얼굴선 광대 · 느슨한 S웨이브)');
+})();
+
+/* ==========================================================================
+ * v3: 손님 사진에 앞머리가 "있다"고 판정되면 앞머리 가닥을 새로 안 만드는 문제
+ *   마네킹은 mannequinHasFringe() === false 일 때만 앞머리선에서 자른 가닥(growFringeStrand)을 만듭니다.
+ *   가운데 가르마 긴 머리 손님은 이마 양옆 머리 때문에 "앞머리 있음"으로 잡혀서
+ *   앞쪽 가닥이 전부 기장대로 자라 얼굴을 덮고 턱까지 내려왔습니다(녹화 22:54).
+ *   앞머리를 새로 만드는 스타일은 손님 사진과 상관없이 "앞머리 없음"으로 보고 앞머리를 새로 자릅니다.
+ *   끄기: FORCE_FRINGE_STYLES = [] 또는 항목 삭제
+ * ======================================================================== */
+(function () {
+  'use strict';
+  var G = window;
+  G.FORCE_FRINGE_STYLES = G.FORCE_FRINGE_STYLES || ['layered_bob_hush'];
+  var orig = G.mannequinHasFringe;
+  if (typeof orig !== 'function' || orig._forceWrapped) return;
+  var wrapped = function () {
+    try {
+      var s = typeof state !== 'undefined' && state;
+      var id = s && ((s.selectedStyle && (s.selectedStyle.specId || s.selectedStyle.id)) || s.pendingSpecId);
+      if (id && G.FORCE_FRINGE_STYLES.indexOf(id) >= 0) return false;
+    } catch (e) {}
+    return orig.apply(this, arguments);
+  };
+  wrapped._forceWrapped = true;
+  G.mannequinHasFringe = wrapped;
+  console.log('[앞머리] 새로 자르는 스타일: ' + G.FORCE_FRINGE_STYLES.join(', '));
 })();
