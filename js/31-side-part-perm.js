@@ -1,6 +1,6 @@
 /* 31-garma-perm.js
  * 1) 가르마펌 스타일 추가 (STYLES / RECIPE_STYLES / STYLE_SPECS)
- * 2) 모발 상태(HAIR_CONDITIONS): 같은 슬라이더 값이라도 모발 상태에 따라 결과가 달라짐
+ * 2) 모발 상태(HAIR_CONDITIONS, 렌더된 가닥에서 자동 판정): 같은 슬라이더 값이라도 모발 상태에 따라 결과가 달라짐
  *    - 길이 슬라이더 = 당겨서 편 실제 커트 길이. 보이는 길이 = 편 길이 × 컬 수축률
  *    - 펌 컬 세기 = 펌 약 세기 × 모발의 펌 흡수율 + 원래 곱슬기
  *    - 짧게 자를수록 무게가 빠져 컬이 더 살아남 (곱슬일수록 크게)
@@ -96,6 +96,7 @@
     const origApply = applyStyleSpec;
     window.applyStyleSpec = function (id) {
       state._activeSpecId = id;
+      try { autoDetectCondition('스타일 적용 ·'); } catch (e) {}
       // 3D 가닥은 state.sections[sec].curl 을 그대로 읽으므로, 길이 계산(tipAt) 전에
       // 섹션별 실제 컬을 cut 에 넣어 둔다. (옆·뒤 0 → 직모 길이로 계산됨)
       bakeSectionCurls(STYLE_SPECS[id]);
@@ -178,28 +179,146 @@
   else refreshStyleGrid();
   window.addEventListener('load', refreshStyleGrid);
 
-  // ---------- 4. 조정 패널에 '모발 상태' 선택 추가 ----------
+  // ---------- 4. 모발 상태 자동 판정 (렌더된 헤어에서) ----------
+  // 미용사가 고르지 않습니다. 지금 화면에 그려지는 3D 가닥(마네킹/시술 후 렌더)의
+  // 굴곡을 재서 직모·웨이브·곱슬을 정합니다.
+  //   wiggle = Σ(이웃 마디 사이 꺾임) − (처음 마디↔끝 마디 꺾임)  → 큰 흐름(중력·두상 따라 휨)은 빼고 잔굴곡만
+  //   cm 당 각도로 환산: < 12°/cm 직모 · < 45°/cm 웨이브 · 그 이상 곱슬
+  const AUTO_COND = { on: true, cmPerUnit: 19.3, sample: 600, wavyDeg: 12, curlyDeg: 45 };
+  function angleBetween(u, v) {
+    const lu = Math.hypot(u.x, u.y, u.z), lv = Math.hypot(v.x, v.y, v.z);
+    if (!(lu > 1e-9 && lv > 1e-9)) return 0;
+    return Math.acos(clamp((u.x * v.x + u.y * v.y + u.z * v.z) / (lu * lv), -1, 1));
+  }
+  function measureRenderedCurl() {
+    const m = state && (state.hair3Dneutral || state.hair3D);
+    const S = m && m.strands;
+    if (!S || !S.length) return null;
+    const step = Math.max(1, Math.floor(S.length / AUTO_COND.sample));
+    const vals = [];
+    for (let i = 0; i < S.length; i += step) {
+      const P = S[i].pts;
+      if (!P || P.length < 5) continue;
+      let arc = 0, turn = 0, first = null, prev = null;
+      for (let k = 1; k < P.length; k++) {
+        const d = { x: P[k].x - P[k - 1].x, y: P[k].y - P[k - 1].y, z: P[k].z - P[k - 1].z };
+        arc += Math.hypot(d.x, d.y, d.z);
+        if (prev) turn += angleBetween(prev, d);
+        if (!first) first = d;
+        prev = d;
+      }
+      const arcCm = arc * AUTO_COND.cmPerUnit;
+      if (arcCm < 2) continue;                                   // 너무 짧은 가닥은 판정 불가
+      const wiggle = Math.max(0, turn - angleBetween(first, prev)) * 180 / Math.PI;
+      vals.push(wiggle / arcCm);
+    }
+    if (vals.length < 20) return null;
+    vals.sort((x, y) => x - y);
+    return { degPerCm: vals[vals.length >> 1], n: vals.length };
+  }
+  function autoDetectCondition(reason) {
+    if (!AUTO_COND.on) return state.hairCondition;
+    const r = measureRenderedCurl();
+    if (!r) return state.hairCondition;
+    const c = r.degPerCm < AUTO_COND.wavyDeg ? 'straight' : r.degPerCm < AUTO_COND.curlyDeg ? 'wavy' : 'curly';
+    state.hairCondition = c;
+    state._hairCondAuto = { cond: c, degPerCm: r.degPerCm, n: r.n };
+    console.log('[모발상태·자동] ' + (reason || '') + ' 렌더 가닥 ' + r.n + '개 잔굴곡 중앙값 ' + r.degPerCm.toFixed(1) +
+      '°/cm → <b>' + HAIR_CONDITIONS[c].label + '</b> (기준 직모<' + AUTO_COND.wavyDeg + ' · 웨이브<' + AUTO_COND.curlyDeg +
+      ') · 끄기 HAIR_AUTO_COND.on=false');
+    return c;
+  }
+  window.HAIR_AUTO_COND = AUTO_COND;
+  window.hairAutoDetectCondition = autoDetectCondition;
+
+  // 조정 패널: 선택 상자 없이 판정 결과만 한 줄로 보여줌
   if (typeof buildGyControls === 'function') {
     const origBuild = buildGyControls;
     window.buildGyControls = function () {
       origBuild.apply(this, arguments);
       const host = document.getElementById('gyControls');
-      if (!host) return;
+      const a = state && state._hairCondAuto;
+      if (!host || !a) return;
       const box = document.createElement('div');
       box.className = 'gy-condition';
-      box.style.cssText = 'display:flex;gap:8px;align-items:center;margin:0 0 10px;font-size:13px';
-      const opts = Object.entries(HAIR_CONDITIONS).map(([k, v]) =>
-        `<option value="${k}"${state.hairCondition === k ? ' selected' : ''}>${v.label}</option>`).join('');
-      const c = cond();
-      box.innerHTML = `<label for="gyHairCond">Hair type</label><select id="gyHairCond">${opts}</select>
-        <span style="opacity:.65">1 cm cut → ~${(visibleLengthCm(1, 45, 'front', 0.8)).toFixed(1)} cm visible · perm take ${Math.round(c.permTake * 100)}%</span>`;
-      box.querySelector('select').onchange = e => {
-        state.hairCondition = e.target.value;
-        rebakeActive();
-        window.buildGyControls();
-        if (typeof drawAdjustPreview === 'function') drawAdjustPreview();
-      };
+      box.style.cssText = 'margin:0 0 10px;font-size:12px;opacity:.7';
+      box.textContent = 'Hair type (auto): ' + HAIR_CONDITIONS[a.cond].label +
+        ' · perm take ' + Math.round(HAIR_CONDITIONS[a.cond].permTake * 100) + '%';
       host.insertBefore(box, host.firstChild);
+    };
+  }
+
+  // ---------- 5. 앞쪽 뿌리 보강 (마네킹) ----------
+  // 앞·정수리 쪽 셀의 가닥 수(면적당)가 옆·뒤보다 적으면, 그 셀 안에 새 뿌리를 더 심습니다.
+  // 다른 셀의 가닥을 옮기지 않습니다 — 순수 추가. 같은 셀에 있던 가닥 모양을 본떠 뿌리만 셀 안 새 자리에 둡니다.
+  const ROOT_EVEN = { on: true, backSideThDeg: 56, minFill: 0.9, maxAddFrac: 0.5 };
+  window.ROOT_EVEN = ROOT_EVEN;
+  function rng(seed) { let t = seed >>> 0; return () => { t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; }; }
+  function evenRoots(res) {
+    if (!ROOT_EVEN.on || !res || !res.strands || !res.roots || !res.grid) return res;
+    const R = res.roots, G = res.grid, NT = R.NT, NP = R.NP, CY = res.CY;
+    let E; try { E = getScalpEllipsoid(); } catch (e) { return res; }
+    const stepY = (G.yTopH - G.yBot) / (G.NY - 1);
+    const rowOf = y => Math.min(G.NY - 1, Math.max(0, Math.round((G.yTopH - y) / stepY)));
+    let area = null;
+    try { area = headSurfaceCellAreas(G.hullW, G.hullD, rowOf, CY, R.b, NT, NP); } catch (e) {}
+    const N = NT * NP, cellOf = p => {
+      const ph = Math.acos(clamp((p.y - CY) / E.b, -1, 1));
+      const th = Math.atan2(p.x / E.a, p.z / E.c);
+      const pi = Math.min(NP - 1, Math.floor(ph / Math.PI * NP)), ti = Math.min(NT - 1, Math.floor((th + Math.PI) / (2 * Math.PI) * NT));
+      return pi * NT + ti;
+    };
+    const byCell = new Array(N);
+    for (const s of res.strands) { const c = cellOf(s.pts[0]); (byCell[c] || (byCell[c] = [])).push(s); }
+    const ok = c => !(R.est && R.est[c] === (typeof EST_OFFSCALP !== 'undefined' ? EST_OFFSCALP : -1)) &&
+      R.den[c] > (typeof MANNEQUIN !== 'undefined' ? MANNEQUIN.baldDen : 0.08);
+    const thOf = c => ((c % NT) + 0.5) / NT * 2 * Math.PI - Math.PI;
+    const ar = c => (area ? area[c] : 1) || 0;
+    // 기준: 옆·뒤 셀들의 면적당 가닥 수 중앙값
+    const ref = [];
+    for (let c = 0; c < N; c++) if (ok(c) && ar(c) > 0 && Math.abs(thOf(c)) * 180 / Math.PI > ROOT_EVEN.backSideThDeg && byCell[c])
+      ref.push(byCell[c].length / ar(c));
+    if (ref.length < 10) return res;
+    ref.sort((a, b) => a - b);
+    const target = ref[ref.length >> 1];
+    const rand = rng(1234567), maxAdd = Math.round(res.strands.length * ROOT_EVEN.maxAddFrac);
+    let added = 0, cellsFixed = 0, frontAdded = 0;
+    const secAdd = {};
+    for (let c = 0; c < N && added < maxAdd; c++) {
+      if (!ok(c) || !(ar(c) > 0)) continue;
+      const have = byCell[c] ? byCell[c].length : 0, want = Math.round(target * ar(c));
+      if (have >= want * ROOT_EVEN.minFill || want - have < 1) continue;
+      const pi = c / NT | 0, ti = c % NT;
+      // 모양 본보기: 같은 셀 가닥 → 없으면 같은 줄 이웃 셀 가닥(모양만 빌리고 원래 가닥은 그대로 둠)
+      let src = byCell[c] && byCell[c].length ? byCell[c] : null;
+      for (let d = 1; !src && d <= 3; d++) for (const t of [ti - d, ti + d]) {
+        const nc = pi * NT + ((t % NT) + NT) % NT;
+        if (!src && byCell[nc] && byCell[nc].length) src = byCell[nc];
+      }
+      if (!src) continue;
+      for (let k = have; k < want && added < maxAdd; k++) {
+        const s = src[(rand() * src.length) | 0];
+        const ph = (pi + rand()) / NP * Math.PI, th = (ti + rand()) / NT * 2 * Math.PI - Math.PI;
+        const root = { x: E.a * Math.sin(ph) * Math.sin(th), y: CY + E.b * Math.cos(ph), z: E.c * Math.sin(ph) * Math.cos(th) };
+        const o = s.pts[0], dx = root.x - o.x, dy = root.y - o.y, dz = root.z - o.z;
+        const ns = Object.assign({}, s, { pts: s.pts.map(p => ({ x: p.x + dx, y: p.y + dy, z: p.z + dz })), _evenAdded: true });
+        if (s.colors) ns.colors = s.colors.slice ? s.colors.slice() : s.colors;
+        res.strands.push(ns); added++;
+        secAdd[s.sec] = (secAdd[s.sec] || 0) + 1;
+        if (Math.abs(thOf(c)) * 180 / Math.PI <= ROOT_EVEN.backSideThDeg) frontAdded++;
+      }
+      cellsFixed++;
+    }
+    console.log('[뿌리 고르게] 기준 = 옆·뒤 셀 면적당 가닥 중앙값 ' + target.toFixed(1) + ' · 모자란 셀 ' + cellsFixed +
+      '개에 새 뿌리 ' + added + '개 추가(앞쪽 ' + frontAdded + ') · 섹션 ' +
+      Object.keys(secAdd).map(k => k + ' +' + secAdd[k]).join(' ') + ' · 다른 셀에서 옮긴 가닥 0 · 끄기 ROOT_EVEN.on=false');
+    return res;
+  }
+  if (typeof buildMannequinHair3D === 'function') {
+    const origMq = buildMannequinHair3D;
+    window.buildMannequinHair3D = function () {
+      const r = origMq.apply(this, arguments);
+      try { return evenRoots(r); } catch (e) { console.warn('[뿌리 고르게] 실패', e); return r; }
     };
   }
 
