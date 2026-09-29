@@ -211,18 +211,26 @@
     var S = st(), b = S && S._styleBase && S._styleBase[sec];
     return b && typeof b[key] === 'number' ? b[key] : null;
   }
+  // 손잡이 가운데 = 스타일 기준값. 왼쪽 절반은 [최소 ~ 기준], 오른쪽 절반은 [기준 ~ 최대]로 나눠 매핑합니다.
+  // 예전엔 기준 ±50 이라 기준이 163 이면 손잡이를 끝까지 내려도 113 에서 멈췄습니다(앞머리를 못 줄임).
   function toPos(sec, key, eff, def) {
     def = def || paramDef(key);
     var b = SB.on ? baseOf(sec, key) : null;
     if (b == null) return eff;
-    return clamp((def.min + def.max) / 2 + (eff - b), def.min, def.max);
+    var lo = def.min, hi = effMax(key, def), mid = (def.min + def.max) / 2;
+    b = clamp(b, lo, hi);
+    if (eff <= b) return b > lo ? clamp(lo + (eff - lo) / (b - lo) * (mid - lo), def.min, mid) : mid;
+    return hi > b ? clamp(mid + (eff - b) / (hi - b) * (def.max - mid), mid, def.max) : mid;
   }
   function toEff(sec, key, pos, def) {
     def = def || paramDef(key);
     var b = SB.on ? baseOf(sec, key) : null;
     if (b == null) return pos;
-    var e = b + (pos - (def.min + def.max) / 2);
-    return Math.round(clamp(e, def.min, effMax(key, def)) * 1000) / 1000;
+    var lo = def.min, hi = effMax(key, def), mid = (def.min + def.max) / 2;
+    b = clamp(b, lo, hi);
+    var e = pos <= mid ? lo + (pos - lo) / (mid - lo) * (b - lo)
+                       : b + (pos - mid) / (def.max - mid) * (hi - b);
+    return Math.round(clamp(e, lo, hi) * 1000) / 1000;
   }
   SB.toPos = toPos; SB.toEff = toEff;
 

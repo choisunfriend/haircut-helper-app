@@ -131,7 +131,7 @@
   // 정수리 볼륨, 옆·뒤는 짧게 그라데이션 + 다운펌으로 눌러 두상 정리.
   const GARMA = {
     name: 'Korean side-part perm · Soft part · Inward C-curl fringe · Short rounded sides',
-    tipAt: { front: 0.60, crown: 0.40, temple: 0.50, side: 0.52, occipital: 0.74, nape: 0.88 },
+    tipAt: { front: 0.46, crown: 0.40, temple: 0.50, side: 0.52, occipital: 0.74, nape: 0.88 },
     cut: {
       front:     { technique: 'uniform',     elevation: 25, texture: 45, density: 85, line: 50, curlDir: -45 },
       crown:     { technique: 'uniform',     elevation: 80, texture: 45, density: 90, curlDir: -25 },
