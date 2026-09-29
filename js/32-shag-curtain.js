@@ -83,3 +83,29 @@
   try { if (typeof buildStyleGrid === 'function') buildStyleGrid(); } catch (e) { console.warn('[스타일] 목록 다시 그리기 실패', e); }
   console.log('[스타일] Curtain Bang Shag 추가');
 })();
+
+/* ==========================================================================
+ * 모든 스타일 숱(density) 100으로 통일
+ *   숱 값 < 100 이면 3D에서 가닥을 "뿌리째" 빼서(숱 55 → 가닥 45% 제거) 머리가 성겨집니다.
+ *   끝을 가볍게 하는 건 texture(끝단 숱·질감)가 맡으므로 density는 100으로 둡니다.
+ *   뿌리 개수는 ROOT_EVEN(31번: 전체 ×1.2, 앞쪽 ×1.5)이 정합니다.
+ *   예외: 시스루뱅 단발의 앞머리 — 일부러 얇게 두는 스타일(specPatch가 적용 때 front 20으로 다시 넣음).
+ *   끄기: 이 블록 앞에서 window.DENSITY_UNIFY = false
+ * ======================================================================== */
+(function () {
+  'use strict';
+  if (window.DENSITY_UNIFY === false || typeof STYLE_SPECS === 'undefined') return;
+  var changed = [];
+  Object.keys(STYLE_SPECS).forEach(function (id) {
+    var cut = STYLE_SPECS[id] && STYLE_SPECS[id].cut;
+    if (!cut) return;
+    Object.keys(cut).forEach(function (sec) {
+      var c = cut[sec];
+      if (!c || typeof c.density !== 'number' || c.density >= 100) return;
+      changed.push(id + '.' + sec + ' ' + c.density + '→100');
+      c.density = 100;
+    });
+  });
+  console.log('[숱 통일] 모든 스타일 density 100 · 바꾼 칸 ' + changed.length + (changed.length ? ' (' + changed.join(', ') + ')' : '') +
+    ' · 시스루뱅 앞머리는 스타일 적용 때 20 유지');
+})();
