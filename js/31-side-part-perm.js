@@ -251,7 +251,13 @@
   // ---------- 5. 앞쪽 뿌리 보강 (마네킹) ----------
   // 앞·정수리 쪽 셀의 가닥 수(면적당)가 옆·뒤보다 적으면, 그 셀 안에 새 뿌리를 더 심습니다.
   // 다른 셀의 가닥을 옮기지 않습니다 — 순수 추가. 같은 셀에 있던 가닥 모양을 본떠 뿌리만 셀 안 새 자리에 둡니다.
-  const ROOT_EVEN = { on: true, backSideThDeg: 56, minFill: 0.9, maxAddFrac: 0.5 };
+  // frontBoost  : 앞쪽(|θ|≤backSideThDeg) 목표 배율 — 1.0이면 옆·뒤와 같은 면적당 가닥수.
+  //               1.15 = 앞쪽은 가르마·헤어라인에서 두피가 먼저 비쳐 보이므로 조금 더 촘촘히
+  // frontMinFill: 앞쪽은 목표의 이 비율 미만이면 채움 (옆·뒤는 minFill)
+  // frontBaldRescue: 앞쪽에서 "대머리"로 판정됐지만 두피 안(두피밖 아님)이고 phi≤frontPhiMax 인 셀도 채움
+  //               (정면 사진의 가르마 선·광택을 두피로 읽어 생긴 빈 칸 — 로그의 "정면 대머리 5")
+  const ROOT_EVEN = { on: true, backSideThDeg: 56, minFill: 0.9, maxAddFrac: 0.5,
+    frontBoost: 1.15, frontMinFill: 1.0, frontBaldRescue: true, frontPhiMax: 1.05 };
   window.ROOT_EVEN = ROOT_EVEN;
   function rng(seed) { let t = seed >>> 0; return () => { t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; }; }
   function evenRoots(res) {
@@ -270,9 +276,23 @@
     };
     const byCell = new Array(N);
     for (const s of res.strands) { const c = cellOf(s.pts[0]); (byCell[c] || (byCell[c] = [])).push(s); }
-    const ok = c => !(R.est && R.est[c] === (typeof EST_OFFSCALP !== 'undefined' ? EST_OFFSCALP : -1)) &&
-      R.den[c] > (typeof MANNEQUIN !== 'undefined' ? MANNEQUIN.baldDen : 0.08);
+    const offScalp = c => !!(R.est && R.est[c] === (typeof EST_OFFSCALP !== 'undefined' ? EST_OFFSCALP : -1));
+    const bald = c => !(R.den[c] > (typeof MANNEQUIN !== 'undefined' ? MANNEQUIN.baldDen : 0.08));
+    const ok = c => !offScalp(c) && !bald(c);
     const thOf = c => ((c % NT) + 0.5) / NT * 2 * Math.PI - Math.PI;
+    const isFront = c => Math.abs(thOf(c)) * 180 / Math.PI <= ROOT_EVEN.backSideThDeg;
+    const phiOf = c => ((c / NT | 0) + 0.5) / NP * Math.PI;
+    // 앞쪽 대머리 판정 구제: 두피 안 + 헤어라인 위(phi 상한) + 주변 8칸 중 절반 이상이 머리
+    const rescued = c => {
+      if (!ROOT_EVEN.frontBaldRescue || offScalp(c) || !bald(c) || !isFront(c) || phiOf(c) > ROOT_EVEN.frontPhiMax) return false;
+      const pi = c / NT | 0, ti = c % NT; let n = 0, h = 0;
+      for (let dp = -1; dp <= 1; dp++) for (let dt = -1; dt <= 1; dt++) {
+        if (!dp && !dt) continue; const p2 = pi + dp; if (p2 < 0 || p2 >= NP) continue;
+        const nc = p2 * NT + ((ti + dt) % NT + NT) % NT; n++; if (ok(nc)) h++;
+      }
+      return n > 0 && h * 2 >= n;
+    };
+    const fillable = c => ok(c) || rescued(c);
     const ar = c => (area ? area[c] : 1) || 0;
     // 기준: 옆·뒤 셀들의 면적당 가닥 수 중앙값
     const ref = [];
@@ -282,17 +302,23 @@
     ref.sort((a, b) => a - b);
     const target = ref[ref.length >> 1];
     const rand = rng(1234567), maxAdd = Math.round(res.strands.length * ROOT_EVEN.maxAddFrac);
-    let added = 0, cellsFixed = 0, frontAdded = 0;
+    let added = 0, cellsFixed = 0, frontAdded = 0, rescuedCells = 0;
     const secAdd = {};
     for (let c = 0; c < N && added < maxAdd; c++) {
-      if (!ok(c) || !(ar(c) > 0)) continue;
-      const have = byCell[c] ? byCell[c].length : 0, want = Math.round(target * ar(c));
-      if (have >= want * ROOT_EVEN.minFill || want - have < 1) continue;
+      if (!fillable(c) || !(ar(c) > 0)) continue;
+      const fr = isFront(c);
+      const have = byCell[c] ? byCell[c].length : 0, want = Math.round(target * ar(c) * (fr ? ROOT_EVEN.frontBoost : 1));
+      if (have >= want * (fr ? ROOT_EVEN.frontMinFill : ROOT_EVEN.minFill) || want - have < 1) continue;
       const pi = c / NT | 0, ti = c % NT;
       // 모양 본보기: 같은 셀 가닥 → 없으면 같은 줄 이웃 셀 가닥(모양만 빌리고 원래 가닥은 그대로 둠)
       let src = byCell[c] && byCell[c].length ? byCell[c] : null;
       for (let d = 1; !src && d <= 3; d++) for (const t of [ti - d, ti + d]) {
         const nc = pi * NT + ((t % NT) + NT) % NT;
+        if (!src && byCell[nc] && byCell[nc].length) src = byCell[nc];
+      }
+      // 같은 줄에 없으면 위·아래 줄(헤어라인 바로 위 칸은 옆 칸도 비어 있는 경우가 많음)
+      for (let d = 1; !src && d <= 2; d++) for (const p2 of [pi - d, pi + d]) {
+        if (p2 < 0 || p2 >= NP) continue; const nc = p2 * NT + ti;
         if (!src && byCell[nc] && byCell[nc].length) src = byCell[nc];
       }
       if (!src) continue;
@@ -307,10 +333,10 @@
         secAdd[s.sec] = (secAdd[s.sec] || 0) + 1;
         if (Math.abs(thOf(c)) * 180 / Math.PI <= ROOT_EVEN.backSideThDeg) frontAdded++;
       }
-      cellsFixed++;
+      cellsFixed++; if (!ok(c)) rescuedCells++;
     }
     console.log('[뿌리 고르게] 기준 = 옆·뒤 셀 면적당 가닥 중앙값 ' + target.toFixed(1) + ' · 모자란 셀 ' + cellsFixed +
-      '개에 새 뿌리 ' + added + '개 추가(앞쪽 ' + frontAdded + ') · 섹션 ' +
+      '개에 새 뿌리 ' + added + '개 추가(앞쪽 ' + frontAdded + ' · 앞쪽 목표 ×' + ROOT_EVEN.frontBoost + ' · 대머리 판정 구제 ' + rescuedCells + '칸) · 섹션 ' +
       Object.keys(secAdd).map(k => k + ' +' + secAdd[k]).join(' ') + ' · 다른 셀에서 옮긴 가닥 0 · 끄기 ROOT_EVEN.on=false');
     return res;
   }
