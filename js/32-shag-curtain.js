@@ -33,8 +33,8 @@
     },
     cut: {
       crown:     set({ technique: 'uniform',    elevation: 100, texture: 80, density: 60, curlDir: 25 }, { volShare: 70 }),   // 90° 이상 들어 자른 짧은 층
-      front:     set({ technique: 'uniform',    elevation: 40,  texture: 70, density: 45, line: 30, curlDir: 35 }, { volShare: 40 }),
-      temple:    set({ technique: 'uniform',    elevation: 90,  texture: 75, density: 55, overdirection: 40, curlDir: 30 }),
+      front:     set({ technique: 'uniform',    elevation: 40,  texture: 70, density: 85, line: 30, curlDir: 35 }, { volShare: 40 }),
+      temple:    set({ technique: 'uniform',    elevation: 90,  texture: 75, density: 75, overdirection: 40, curlDir: 30 }),
       side:      set({ technique: 'uniform',    elevation: 85,  texture: 80, density: 55, curlDir: 40 }, { volShare: 60 }),   // 끝을 많이 쳐내 가볍게
       occipital: set({ technique: 'uniform',    elevation: 90,  texture: 80, density: 55, curlDir: 35 }, { volShare: 60 }),
       nape:      set({ technique: 'uniform',    elevation: 60,  texture: 85, density: 45, line: 20, curlDir: 40 })          // 목덜미는 얇고 뾰족하게
