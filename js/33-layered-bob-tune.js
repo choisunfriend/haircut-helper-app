@@ -48,7 +48,10 @@
       MANNEQUIN: { lenPct: 0.9 },
       MQ_FRINGE: {
         on: true,
-        tipFaceFrac: -0.05,    // 앞머리 끝: 눈썹 바로 아래 ~ 눈 위
+        tipFaceFrac: -0.15,    // 앞머리 끝: 눈썹 높이 (v2: -0.05 는 눈을 덮음)
+        frontFrac: 1.0,        // v2: 앞 섹션 가닥은 전부 앞머리선에서 자름 (0.6 이면 40%가 기장대로 얼굴을 덮고 내려옴)
+        crownFrac: 0.45,       // v2: 정수리 앞쪽 가닥 중 앞머리로 떨어지는 몫 (0.15 → 나머지가 입술까지 내려오던 원인)
+        crownThFrac: 0.7,
         lineHalfX: 0.9,        // 이마 폭만 덮음(얼굴 양옆으로 흘러내리지 않게)
         lineGain: 0.45,        // 가운데·바깥 길이 차이 작게 → 일자에 가까운 시스루 라인 (커튼뱅 X)
         converge: 0.95,        // 끝이 아주 살짝 가운데로 → 가운데가 벌어져 양갈래로 보이지 않게
@@ -78,7 +81,7 @@
       spec.perm = { curl: 22, wave: 95 };     // 굵은 롤 · 약한 컬 = 느슨한 S웨이브
       spec.globalCurl = 22;
       spec.styling = Object.assign({}, spec.styling, {
-        part: 0, partAmt: 10,  // 가르마를 약하게 → 앞머리가 가운데서 갈라지지 않음
+        part: 0, partAmt: 30,  // v2: 앞머리로 안 잘린 윗머리는 가르마 양옆으로 넘김 (10 → 얼굴 위로 떨어짐)
         flow: 60,              // 끝 바깥말음(플립)
         volume: 50, finish: 50, sleek: 25
       });
