@@ -40,7 +40,10 @@
     const scale = sectionCurlScale(sec);
     const spec = (typeof STYLE_SPECS !== 'undefined' && state) ? STYLE_SPECS[state._activeSpecId] : null;
     if (spec && typeof spec.finishCurl === 'number' && state.hairFinish !== 'wet') permCurl *= spec.finishCurl;
-    let curl = (permCurl * c.permTake) * scale + c.naturalCurl * (0.6 + 0.4 * scale);
+    // 펌 컬과 원래 곱슬기는 단순 합이 아니라 겹쳐서 커짐: 1-(1-a)(1-b)
+    const a = clamp(permCurl * c.permTake * scale / 100, 0, 1);
+    const b = clamp(c.naturalCurl * (0.6 + 0.4 * scale) / 100, 0, 1);
+    let curl = (1 - (1 - a) * (1 - b)) * 100;
     const shorter = clamp(1 - rawLenRatio, 0, 1);          // 기본 길이 대비 얼마나 짧아졌나
     curl *= 1 + c.weightRelease * shorter;
     return clamp(curl, 0, 100);
@@ -71,9 +74,8 @@
       if (!CONDITION_CFG.enabled || !r) return r;
       const baseLen = r.lengthRatioFor, baseCurl = r.curlAmtFor, baseLayer = r.cutLayerDeltaFor;
       const curlAt = (x, sec, y) => {
-        const raw = baseLen(x, sec, y);
-        const perm = baseCurl(x, sec, y);
-        return { raw, curl: effectiveCurl(perm, sec, Math.min(1, raw)) };
+        // 섹션 curl 값은 applyStyleSpec 단계에서 이미 모발 상태·섹션 배율이 반영됨 (2D/3D 공통)
+        return { raw: baseLen(x, sec, y), curl: baseCurl(x, sec, y) };
       };
       r.curlAmtFor = (x, sec, y) => curlAt(x, sec, y).curl;
       r.lengthRatioFor = (x, sec, y) => {
@@ -94,8 +96,34 @@
     const origApply = applyStyleSpec;
     window.applyStyleSpec = function (id) {
       state._activeSpecId = id;
+      // 3D 가닥은 state.sections[sec].curl 을 그대로 읽으므로, 길이 계산(tipAt) 전에
+      // 섹션별 실제 컬을 cut 에 넣어 둔다. (옆·뒤 0 → 직모 길이로 계산됨)
+      bakeSectionCurls(STYLE_SPECS[id]);
       return origApply.apply(this, arguments);
     };
+  }
+  function bakeSectionCurls(spec) {
+    if (!spec || !spec.permBase || !spec.cut) return;
+    for (const sec in spec.cut) {
+      spec.cut[sec].curl = Math.round(effectiveCurl(spec.permBase.curl, sec, 1));
+      spec.cut[sec].wave = spec.permBase.wave;
+    }
+    spec.globalCurl = spec.cut.front ? spec.cut.front.curl : spec.globalCurl;
+  }
+  /** 모발 상태 / 마무리(wet·dry) 변경 시 현재 섹션 컬 재계산 */
+  function rebakeActive() {
+    const spec = typeof STYLE_SPECS !== 'undefined' && STYLE_SPECS[state._activeSpecId];
+    if (!spec || !spec.permBase) return;
+    bakeSectionCurls(spec);
+    for (const sec in spec.cut) if (state.sections[sec]) {
+      state.sections[sec].curl = spec.cut[sec].curl;
+      state.sections[sec].wave = spec.cut[sec].wave;
+    }
+    state._globalCurl = spec.globalCurl;
+    if (typeof rebuildHair3D === 'function') rebuildHair3D();
+  }
+  window.rebakeHairCondition = rebakeActive;
+  {
   }
 
   // ---------- 3. 가르마펌 스타일 ----------
@@ -112,7 +140,7 @@
       occipital: { technique: 'graduation',  elevation: 45, texture: 35, density: 85, curlDir: -10 },
       nape:      { technique: 'graduation',  elevation: 15, texture: 30, density: 75, line: 45, curlDir: 0 }
     },
-    perm: { curl: 70, wave: 45 },   // 젖은 상태 컬. 드라이 후 × finishCurl ≈ 38
+    permBase: { curl: 70, wave: 45 },   // 젖은 상태 약 세기. 섹션별 실제 컬은 bakeSectionCurls 가 계산 (perm 키를 두면 전 섹션 동일 컬로 덮어씀)
     // 참고 영상(0:00~0:38): 옆·뒤는 로드 없이 짧게, 윗머리만 와인딩.
     // 앞 헤어라인은 굵은 로드(분홍)로 뒤쪽(정수리 방향) 말기 → 얼굴에서 멀어지는 C컬,
     // 정수리~탑은 중간 로드(파랑)를 가로로 줄지어 뒤로 말기, 가르마 쪽 라인은 사선 배열.
@@ -167,6 +195,7 @@
         <span style="opacity:.65">1 cm cut → ~${(visibleLengthCm(1, 45, 'front', 0.8)).toFixed(1)} cm visible · perm take ${Math.round(c.permTake * 100)}%</span>`;
       box.querySelector('select').onchange = e => {
         state.hairCondition = e.target.value;
+        rebakeActive();
         window.buildGyControls();
         if (typeof drawAdjustPreview === 'function') drawAdjustPreview();
       };
