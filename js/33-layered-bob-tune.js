@@ -1,0 +1,88 @@
+/* ==========================================================================
+ * 33-layered-bob-tune.js — Layered Bob (layered_bob_hush) 레퍼런스 맞춤 (2026-09-29)
+ *
+ * 레퍼런스(정면·좌50°·우50°·후면 4컷): 턱~목 중간 기장 레이어드 보브
+ *   · 앞머리: 이마 전체를 얇게 덮는 시스루뱅, 끝은 눈썹~눈 사이, 살짝 안으로 C컬
+ *   · 얼굴선: 광대~입꼬리 높이에서 끝나는 짧은 사이드뱅, 얼굴 "옆"에서 바깥으로 넘어감
+ *   · 결: 뿌리는 차분, 중간부터 느슨한 S웨이브, 끝은 바깥으로 살짝 튕김(잔곱슬 없음)
+ *   · 색: 올리브빛 애쉬 브라운
+ *
+ * 화면 녹화에서 고칠 점:
+ *   1) 앞머리 양갈래 — temple(얼굴선) 끝이 턱선(0.98)까지 내려와 얼굴 앞에 굵은 두 가닥으로 늘어짐
+ *      → 광대 높이(0.80)로 올리고, overdirection·curlDir 로 얼굴 옆·바깥으로 넘김
+ *   2) 앞머리가 무거움 — 숱 통일(32번)이 front density 34→100 으로 바꿔 통뱅처럼 두꺼워짐
+ *      → 시스루뱅은 예외로 22 (wavy bob 과 같은 방식: specPatch 로 적용 때 다시 넣음)
+ *   3) 잔곱슬 파마처럼 보임 — wave 70(가는 로드) → 95(굵은 롤), 끝 12cm만 느슨하게
+ * 끄기: 이 파일을 index.html 에서 빼면 원래 스펙 그대로입니다.
+ * ======================================================================== */
+(function () {
+  'use strict';
+  var G = window;
+  var ID = 'layered_bob_hush';
+  if (typeof STYLE_SPECS === 'undefined' || !STYLE_SPECS[ID]) return;
+  var COLOR = '#6B5A45';   // 레퍼런스 올리브 애쉬 브라운
+
+  // 목록 카드 색도 맞춤
+  try {
+    var card = (typeof STYLES !== 'undefined') && STYLES.find(function (s) { return s.id === ID; });
+    if (card) { card.colorHex = COLOR; card.curl = 22; }
+  } catch (e) {}
+
+  var set = function (o) {   // 펌·세팅 기준값(막대 숫자) — curlLen 12 = 끝 12cm만 웨이브
+    return Object.assign({ base: 30, define: 55, volShare: 50, volPoint: 55, weight: 35, curlLen: 12 }, o);
+  };
+
+  if (!(G.STYLE_BASE && G.STYLE_BASE.addProfile)) return;
+  G.STYLE_BASE.addProfile(ID, {
+    label: 'Layered bob · See-through bangs · Flick-out ends',
+    config: {
+      CURL_BUNDLE: {
+        rodThickCm: 4,       // 굵은 롤 → 곱슬이 아니라 S결
+        pitchThick: 2.0,     // 한 바퀴를 길게
+        relax: 1.25,
+        microAmp: 0.015,     // 잔곱슬 거의 없음
+        microPhase: 0.15
+      },
+      CURL3D_FIX: { ampGamma: 0.75 },
+      VOLUME3D: { AMP: 0.15 },
+      MANNEQUIN: { lenPct: 0.9 },
+      MQ_FRINGE: {
+        on: true,
+        tipFaceFrac: -0.05,    // 앞머리 끝: 눈썹 바로 아래 ~ 눈 위
+        lineHalfX: 0.9,        // 이마 폭만 덮음(얼굴 양옆으로 흘러내리지 않게)
+        lineGain: 0.45,        // 가운데·바깥 길이 차이 작게 → 일자에 가까운 시스루 라인 (커튼뱅 X)
+        converge: 0.95,        // 끝이 아주 살짝 가운데로 → 가운데가 벌어져 양갈래로 보이지 않게
+        crownAllAround: false  // 앞쪽만 자름
+      },
+      HAIR_DYE: { sMax: 1.2, highlightK: 0.65, glossDesat: 0.7 }
+    },
+    volBase: 1.0,
+    after: { front: { curl: 12 }, temple: { curl: 20 } },   // 앞머리·얼굴선은 거의 곧은 C컬
+    shade: { ao: 0.42, lumCap: 1.3, spec: 0.22, specPow: 60 },
+    specPatch: function (spec) {
+      spec.color = COLOR;
+      spec.tipAt = Object.assign({}, spec.tipAt, {
+        front: 0.52,        // 시스루뱅: 눈썹~눈 사이
+        crown: 0.80,        // 윗층: 광대~코끝 → 층이 보이게
+        temple: 0.80,       // 얼굴선: 광대 높이 (0.98 → 턱까지 내려와 양갈래로 보이던 원인)
+        side: 1.02,         // 턱 아래
+        occipital: 1.06,
+        nape: 1.10          // 목 중간
+      });
+      Object.assign(spec.cut.front,     set({ density: 22, texture: 75, elevation: 15, line: 50, curlDir: -15 }), { volShare: 30, weight: 45 });
+      Object.assign(spec.cut.temple,    set({ density: 100, texture: 60, elevation: 60, overdirection: 60, curlDir: 45 }));
+      Object.assign(spec.cut.crown,     set({ density: 100, texture: 50, elevation: 80, curlDir: 25 }), { volShare: 55, volPoint: 35 });
+      Object.assign(spec.cut.side,      set({ density: 100, texture: 60, elevation: 60, curlDir: 40 }));
+      Object.assign(spec.cut.occipital, set({ density: 100, texture: 55, elevation: 55, curlDir: 35 }));
+      Object.assign(spec.cut.nape,      set({ density: 100, texture: 55, elevation: 30, curlDir: 40 }), { technique: 'uniform' });
+      spec.perm = { curl: 22, wave: 95 };     // 굵은 롤 · 약한 컬 = 느슨한 S웨이브
+      spec.globalCurl = 22;
+      spec.styling = Object.assign({}, spec.styling, {
+        part: 0, partAmt: 10,  // 가르마를 약하게 → 앞머리가 가운데서 갈라지지 않음
+        flow: 60,              // 끝 바깥말음(플립)
+        volume: 50, finish: 50, sleek: 25
+      });
+    }
+  });
+  console.log('[스타일] Layered Bob 레퍼런스 맞춤 적용 (앞머리 시스루 · 얼굴선 광대 · 느슨한 S웨이브)');
+})();
