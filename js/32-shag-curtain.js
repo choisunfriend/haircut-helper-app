@@ -17,30 +17,31 @@
   if (typeof STYLE_SPECS === 'undefined' || typeof STYLES === 'undefined' || STYLE_SPECS[ID]) return;
 
   var set = function (o, extra) {   // 펌·세팅 기준값(막대 숫자)
-    // curlLen 22 = 끝에서 22cm(대략 중간부터) 웨이브, volPoint 30 = 볼륨을 위쪽(크라운)에
-    return Object.assign({ base: 30, define: 45, volShare: 55, volPoint: 30, weight: 25, curlLen: 22 }, extra || {}, o);
+    // curlLen 10 = 끝 10cm만 느슨하게 (v1의 22cm는 뿌리까지 감겨 파마머리가 됨), volPoint 30 = 볼륨을 위쪽(크라운)에
+    return Object.assign({ base: 30, define: 35, volShare: 55, volPoint: 30, weight: 25, curlLen: 10 }, extra || {}, o);
   };
   STYLE_SPECS[ID] = {
     name: 'Curtain bang shag · Choppy layers · Flipped feathered ends',
-    tipAt: {                 // 두상 높이 기준 끝 위치 (1.0 ≈ 턱선)
-      front: 0.80,           // 커튼뱅: 광대뼈 높이
-      crown: 0.95,           // 섀그의 핵심 — 크라운 레이어를 짧게
-      temple: 1.00,          // 얼굴선 레이어: 턱선에서 커튼뱅과 이어짐
-      side: 1.30,            // 쇄골 바로 위
-      occipital: 1.34,
-      nape: 1.38
+    // v3: 섀그 = 커트. 위는 짧고 아래로 갈수록 급하게 길어지는 층(길이 차이 약 0.7 두상높이)
+    tipAt: {                 // 두상 위에서부터 끝 위치 (두상높이 비율, 1.0 ≈ 턱선, 0.5 ≈ 눈썹)
+      front: 0.70,           // 커튼뱅: 광대뼈 높이
+      crown: 0.62,           // 섀그 핵심 — 크라운을 눈~광대 높이로 짧게 쳐서 윗볼륨
+      temple: 0.82,          // 얼굴선 레이어: 입꼬리 높이, 커튼뱅과 이어짐
+      side: 1.15,            // 턱 아래~목
+      occipital: 1.25,
+      nape: 1.35             // 쇄골 바로 위 (가장 긴 곳, 가늘게)
     },
     cut: {
-      crown:     set({ technique: 'uniform',    elevation: 90, texture: 70, density: 70, curlDir: 25 }, { volShare: 70 }),
-      front:     set({ technique: 'uniform',    elevation: 30, texture: 60, density: 45, line: 35, curlDir: 35 }, { volShare: 40, curlLen: 8 }),   // 커튼뱅 끝은 바깥으로 넘김
-      temple:    set({ technique: 'uniform',    elevation: 70, texture: 65, density: 65, overdirection: 35, curlDir: 30 }),
-      side:      set({ technique: 'increase',   elevation: 60, texture: 70, density: 75, curlDir: 40 }, { volShare: 60 }),   // 끝이 밖으로 튕김
-      occipital: set({ technique: 'increase',   elevation: 65, texture: 65, density: 80, curlDir: 35 }, { volShare: 60 }),
-      nape:      set({ technique: 'graduation', elevation: 40, texture: 60, density: 70, line: 30, curlDir: 40 })
+      crown:     set({ technique: 'uniform',    elevation: 100, texture: 80, density: 60, curlDir: 25 }, { volShare: 70 }),   // 90° 이상 들어 자른 짧은 층
+      front:     set({ technique: 'uniform',    elevation: 40,  texture: 70, density: 45, line: 30, curlDir: 35 }, { volShare: 40 }),
+      temple:    set({ technique: 'uniform',    elevation: 90,  texture: 75, density: 55, overdirection: 40, curlDir: 30 }),
+      side:      set({ technique: 'uniform',    elevation: 85,  texture: 80, density: 55, curlDir: 40 }, { volShare: 60 }),   // 끝을 많이 쳐내 가볍게
+      occipital: set({ technique: 'uniform',    elevation: 90,  texture: 80, density: 55, curlDir: 35 }, { volShare: 60 }),
+      nape:      set({ technique: 'uniform',    elevation: 60,  texture: 85, density: 45, line: 20, curlDir: 40 })          // 목덜미는 얇고 뾰족하게
     },
-    perm: { curl: 48, wave: 80 },     // 블로우아웃(95)보다 가는 롤 → 결이 더 보이는 느슨한 웨이브
+    perm: { curl: 28, wave: 97 },     // v2: 굵은 롤 + 약한 컬 → 섀그는 곱슬이 아니라 끝만 흐트러진 결 (v1 wave 80 = 가는 로드 → 잔곱슬)
     styling: { sweep: 0, volume: 58, flow: 45, part: 0, partAmt: 55, finish: 40, sleek: 10 },   // part 0 = 가운데 가르마(커튼뱅이 양쪽으로 갈라짐), sleek 낮게 = 헝클어진 텍스처
-    globalCurl: 48,
+    globalCurl: 28,
     color: '#3A2618'                  // 레퍼런스 대부분이 따뜻한 미디엄 브라운
   };
 
@@ -48,7 +49,7 @@
     id: ID, specId: ID,
     name: 'Curtain Bang Shag',
     tags: 'Choppy layers · Curtain bangs · Flipped ends',
-    length: 70, curl: 48, volume: 66, colorHex: '#3A2618'
+    length: 60, curl: 28, volume: 66, colorHex: '#3A2618'
   });
   try { if (typeof RECIPE_STYLES !== 'undefined' && RECIPE_STYLES.indexOf(ID) < 0) RECIPE_STYLES.push(ID); } catch (e) {}
 
@@ -57,14 +58,14 @@
       label: 'Curtain bang shag',
       config: {
         CURL_BUNDLE: {
-          rodThickCm: 3.2,     // 블로우아웃보다 가는 롤
-          pitchThick: 1.6,
+          rodThickCm: 5,
+          pitchThick: 2.2,     // 한 바퀴를 길게 → 컬이 아니라 S결
           relax: 1.25,
-          microAmp: 0.05,      // 약간의 잔결 = 섀그 특유의 텍스처
+          microAmp: 0.01,      // 잔곱슬 없음
           microPhase: 0.2
         },
         CURL3D_FIX: { ampGamma: 0.75 },
-        VOLUME3D: { AMP: 0.2 },            // 크라운 볼륨
+        VOLUME3D: { AMP: 0.16 },            // 크라운 볼륨
         MQ_FRINGE: {
           on: true,
           tipFaceFrac: 0.35,     // 앞머리 끝 기준선: 광대뼈(눈 아래) — 시스루뱅(-0.1)보다 훨씬 길게
@@ -74,8 +75,8 @@
         },
         HAIR_DYE: { sMax: 1.3, highlightK: 0.7, glossDesat: 0.7 }   // 레퍼런스의 결 따라 들어간 하이라이트
       },
-      volBase: 1.1,
-      after: { front: { curl: 25 } },   // 커튼뱅은 바깥으로 넘어가는 C컬
+      volBase: 1.0,
+      after: { front: { curl: 12 }, crown: { curl: 18 }, temple: { curl: 18 } },   // 앞·윗머리는 거의 곧게 → 층 끝선이 보이게   // 커튼뱅은 바깥으로 넘어가는 C컬
       shade: { ao: 0.45, lumCap: 1.3, spec: 0.2, specPow: 50 }   // 층 사이 그림자를 조금 더 → 레이어가 도드라짐
     });
   }
