@@ -252,12 +252,12 @@
   // 앞·정수리 쪽 셀의 가닥 수(면적당)가 옆·뒤보다 적으면, 그 셀 안에 새 뿌리를 더 심습니다.
   // 다른 셀의 가닥을 옮기지 않습니다 — 순수 추가. 같은 셀에 있던 가닥 모양을 본떠 뿌리만 셀 안 새 자리에 둡니다.
   // frontBoost  : 앞쪽(|θ|≤backSideThDeg) 목표 배율 — 1.0이면 옆·뒤와 같은 면적당 가닥수.
-  //               1.5 = 앞쪽은 가르마·헤어라인에서 두피가 먼저 비쳐 보이므로 조금 더 촘촘히
+  //               2.0 = 앞쪽은 가르마·헤어라인에서 두피가 먼저 비쳐 보이므로 조금 더 촘촘히
   // frontMinFill: 앞쪽은 목표의 이 비율 미만이면 채움 (옆·뒤는 minFill)
   // frontBaldRescue: 앞쪽에서 "대머리"로 판정됐지만 두피 안(두피밖 아님)이고 phi≤frontPhiMax 인 셀도 채움
   //               (정면 사진의 가르마 선·광택을 두피로 읽어 생긴 빈 칸 — 로그의 "정면 대머리 5")
   const ROOT_EVEN = { on: true, backSideThDeg: 56, minFill: 0.9, maxAddFrac: 0.5,
-    frontBoost: 1.5,  frontMinFill: 1.0, frontBaldRescue: true, frontPhiMax: 1.05 };
+    frontBoost: 2.0,  frontMinFill: 1.0, frontBaldRescue: true, frontPhiMax: 1.05 };
   window.ROOT_EVEN = ROOT_EVEN;
   function rng(seed) { let t = seed >>> 0; return () => { t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; }; }
   function evenRoots(res) {
