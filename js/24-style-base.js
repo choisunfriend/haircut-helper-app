@@ -37,7 +37,7 @@
    *  false = 프로필이 걸린 스타일에서만 고침(다른 스타일은 지금 보이는 그대로)
    *  true  = 모든 스타일에서 고침(다른 스타일도 볼륨이 커집니다 — 확인 후 켜세요) */
   SB.fixVolHashAll = true;   // 막대만으로 모양을 만들려면 모든 스타일에서 고쳐져 있어야 합니다
-  SB.PARAM_KEYS = ['length', 'elevation', 'texture', 'density', 'overdirection', 'line', 'curl', 'wave', 'curlDir',
+  SB.PARAM_KEYS = ['length', 'elevation', 'texture', 'overdirection', 'line', 'curl', 'wave', 'curlDir',
     'base', 'define', 'volShare', 'volPoint', 'weight', 'curlLen'];
 
   /* 스타일별 엔진 프로필 — 키는 STYLE_SPECS 의 id (또는 커스텀 스타일의 profileId) */
@@ -75,7 +75,6 @@
         }
       },
       specPatch: function (spec) {
-        spec.cut.front.density = 20;
         spec.perm.wave = 92;          // 로드 ≈ 3.4cm (굵은 로드)
         spec.styling.volume = 50;
         // 펌·세팅 섹션별 기준값 (막대 숫자 그대로)
@@ -897,12 +896,12 @@
       nape: 1.55             // 쇄골 근처
     },
     cut: {
-      crown:     set({ technique: 'uniform', elevation: 70, texture: 40, density: 90, curlDir: 20 }),
-      front:     set({ technique: 'uniform', elevation: 20, texture: 55, density: 45, line: 50, curlDir: -10 }, { volShare: 35 }),   // 얼굴 쪽으로 감싸는 컬 — 끝이 벌어지지 않게
-      temple:    set({ technique: 'uniform', elevation: 55, texture: 45, density: 75, overdirection: 30, curlDir: 5 }),
-      side:      set({ technique: 'uniform', elevation: 45, texture: 45, density: 100, curlDir: 25 }, { volShare: 65 }),
-      occipital: set({ technique: 'uniform', elevation: 45, texture: 40, density: 100, curlDir: 20 }, { volShare: 60 }),
-      nape:      set({ technique: 'uniform', elevation: 25, texture: 35, density: 100, line: 50, curlDir: 20 })
+      crown:     set({ technique: 'uniform', elevation: 70, texture: 40, curlDir: 20 }),
+      front:     set({ technique: 'uniform', elevation: 20, texture: 55, line: 50, curlDir: -10 }, { volShare: 35 }),   // 얼굴 쪽으로 감싸는 컬 — 끝이 벌어지지 않게
+      temple:    set({ technique: 'uniform', elevation: 55, texture: 45, overdirection: 30, curlDir: 5 }),
+      side:      set({ technique: 'uniform', elevation: 45, texture: 45, curlDir: 25 }, { volShare: 65 }),
+      occipital: set({ technique: 'uniform', elevation: 45, texture: 40, curlDir: 20 }, { volShare: 60 }),
+      nape:      set({ technique: 'uniform', elevation: 25, texture: 35, line: 50, curlDir: 20 })
     },
     perm: { curl: 42, wave: 95 },     // wave 95 = 굵은 롤
     styling: { sweep: 0, volume: 50, flow: 30, part: 0, partAmt: 65, finish: 55, sleek: 20 },   // part 0 = 가운데 가르마, partAmt 65 = 양옆으로 넘김(80이면 앞쪽 끝이 벌어짐)

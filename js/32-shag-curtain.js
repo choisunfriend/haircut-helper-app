@@ -32,12 +32,12 @@
       nape: 1.35             // 쇄골 바로 위 (가장 긴 곳, 가늘게)
     },
     cut: {
-      crown:     set({ technique: 'uniform',    elevation: 100, texture: 80, density: 100, curlDir: 25 }, { volShare: 70 }),   // 90° 이상 들어 자른 짧은 층
-      front:     set({ technique: 'uniform',    elevation: 40,  texture: 70, density: 100, line: 30, curlDir: 35 }, { volShare: 40 }),
-      temple:    set({ technique: 'uniform',    elevation: 90,  texture: 75, density: 100, overdirection: 40, curlDir: 30 }),
-      side:      set({ technique: 'uniform',    elevation: 85,  texture: 80, density: 100, curlDir: 40 }, { volShare: 60 }),   // 끝을 많이 쳐내 가볍게
-      occipital: set({ technique: 'uniform',    elevation: 90,  texture: 80, density: 100, curlDir: 35 }, { volShare: 60 }),
-      nape:      set({ technique: 'uniform',    elevation: 60,  texture: 85, density: 100, line: 20, curlDir: 40 })          // 목덜미는 얇고 뾰족하게
+      crown:     set({ technique: 'uniform',    elevation: 100, texture: 80, curlDir: 25 }, { volShare: 70 }),   // 90° 이상 들어 자른 짧은 층
+      front:     set({ technique: 'uniform',    elevation: 40,  texture: 70, line: 30, curlDir: 35 }, { volShare: 40 }),
+      temple:    set({ technique: 'uniform',    elevation: 90,  texture: 75, overdirection: 40, curlDir: 30 }),
+      side:      set({ technique: 'uniform',    elevation: 85,  texture: 80, curlDir: 40 }, { volShare: 60 }),   // 끝을 많이 쳐내 가볍게
+      occipital: set({ technique: 'uniform',    elevation: 90,  texture: 80, curlDir: 35 }, { volShare: 60 }),
+      nape:      set({ technique: 'uniform',    elevation: 60,  texture: 85, line: 20, curlDir: 40 })          // 목덜미는 얇고 뾰족하게
     },
     perm: { curl: 28, wave: 97 },     // v2: 굵은 롤 + 약한 컬 → 섀그는 곱슬이 아니라 끝만 흐트러진 결 (v1 wave 80 = 가는 로드 → 잔곱슬)
     styling: { sweep: 0, volume: 58, flow: 45, part: 0, partAmt: 55, finish: 40, sleek: 10 },   // part 0 = 가운데 가르마(커튼뱅이 양쪽으로 갈라짐), sleek 낮게 = 헝클어진 텍스처
@@ -84,28 +84,5 @@
   console.log('[스타일] Curtain Bang Shag 추가');
 })();
 
-/* ==========================================================================
- * 모든 스타일 숱(density) 100으로 통일
- *   숱 값 < 100 이면 3D에서 가닥을 "뿌리째" 빼서(숱 55 → 가닥 45% 제거) 머리가 성겨집니다.
- *   끝을 가볍게 하는 건 texture(끝단 숱·질감)가 맡으므로 density는 100으로 둡니다.
- *   뿌리 개수는 ROOT_EVEN(31번: 전체 ×1.2, 앞쪽 ×1.5)이 정합니다.
- *   예외: 시스루뱅 단발의 앞머리 — 일부러 얇게 두는 스타일(specPatch가 적용 때 front 20으로 다시 넣음).
- *   끄기: 이 블록 앞에서 window.DENSITY_UNIFY = false
- * ======================================================================== */
-(function () {
-  'use strict';
-  if (window.DENSITY_UNIFY === false || typeof STYLE_SPECS === 'undefined') return;
-  var changed = [];
-  Object.keys(STYLE_SPECS).forEach(function (id) {
-    var cut = STYLE_SPECS[id] && STYLE_SPECS[id].cut;
-    if (!cut) return;
-    Object.keys(cut).forEach(function (sec) {
-      var c = cut[sec];
-      if (!c || typeof c.density !== 'number' || c.density >= 100) return;
-      changed.push(id + '.' + sec + ' ' + c.density + '→100');
-      c.density = 100;
-    });
-  });
-  console.log('[숱 통일] 모든 스타일 density 100 · 바꾼 칸 ' + changed.length + (changed.length ? ' (' + changed.join(', ') + ')' : '') +
-    ' · 시스루뱅 앞머리는 스타일 적용 때 20 유지');
-})();
+/* 숱(density) 막대는 없앴습니다(2026-09-29). 값이 낮으면 가닥을 뿌리째 빼서 두피가 비어 보였고, 실제 숱치기는
+ * 텍스처라이징(texture) 막대가 맡습니다. 스펙에 남은 density 값은 아무 데서도 쓰지 않습니다. */

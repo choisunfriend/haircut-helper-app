@@ -602,7 +602,7 @@
         if (angle && s.srcAngle !== angle) continue;
         acc += 1 / st; if (acc < 1) continue; acc -= 1;
         var sec = state.sections && state.sections[s.sec] || {};
-        if (!ADJ_CACHE.split && typeof sec.density === 'number' && sec.density < 100 && _cutHash01(s) > Math.max(0, sec.density) / 100) continue;
+        if (false /* 숱(density) 막대 제거 */ && !ADJ_CACHE.split && typeof sec.density === 'number' && sec.density < 100 && _cutHash01(s) > Math.max(0, sec.density) / 100) continue;
         var e = psig ? M.map.get(s) : null;
         if (e) { Q.hits++; out.push(e); continue; }
         Q.miss++;

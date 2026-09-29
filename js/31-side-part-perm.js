@@ -134,12 +134,12 @@
     name: 'Korean side-part perm · Soft part · Inward C-curl fringe · Short rounded sides',
     tipAt: { front: 0.46, crown: 0.40, temple: 0.50, side: 0.52, occipital: 0.74, nape: 0.88 },
     cut: {
-      front:     { technique: 'uniform',     elevation: 25, texture: 45, density: 85, line: 50, curlDir: -45 },
-      crown:     { technique: 'uniform',     elevation: 80, texture: 45, density: 90, curlDir: -25 },
-      temple:    { technique: 'graduation',  elevation: 40, texture: 35, density: 80, overdirection: 25, curlDir: -10 },
-      side:      { technique: 'graduation',  elevation: 20, texture: 30, density: 70, curlDir: 0 },
-      occipital: { technique: 'graduation',  elevation: 45, texture: 35, density: 85, curlDir: -10 },
-      nape:      { technique: 'graduation',  elevation: 15, texture: 30, density: 75, line: 45, curlDir: 0 }
+      front:     { technique: 'uniform',     elevation: 25, texture: 45, line: 50, curlDir: -45 },
+      crown:     { technique: 'uniform',     elevation: 80, texture: 45, curlDir: -25 },
+      temple:    { technique: 'graduation',  elevation: 40, texture: 35, overdirection: 25, curlDir: -10 },
+      side:      { technique: 'graduation',  elevation: 20, texture: 30, curlDir: 0 },
+      occipital: { technique: 'graduation',  elevation: 45, texture: 35, curlDir: -10 },
+      nape:      { technique: 'graduation',  elevation: 15, texture: 30, line: 45, curlDir: 0 }
     },
     permBase: { curl: 70, wave: 45 },   // 젖은 상태 약 세기. 섹션별 실제 컬은 bakeSectionCurls 가 계산 (perm 키를 두면 전 섹션 동일 컬로 덮어씀)
     // 참고 영상(0:00~0:38): 옆·뒤는 로드 없이 짧게, 윗머리만 와인딩.
