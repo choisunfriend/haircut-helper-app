@@ -251,13 +251,15 @@
   // ---------- 5. 앞쪽 뿌리 보강 (마네킹) ----------
   // 앞·정수리 쪽 셀의 가닥 수(면적당)가 옆·뒤보다 적으면, 그 셀 안에 새 뿌리를 더 심습니다.
   // 다른 셀의 가닥을 옮기지 않습니다 — 순수 추가. 같은 셀에 있던 가닥 모양을 본떠 뿌리만 셀 안 새 자리에 둡니다.
+  // boost       : 전체 목표 배율 — 모든 셀을 옆·뒤 면적당 가닥 중앙값 × boost 까지 채움 (2.0 = 두 배 숱)
+  // maxAddFrac  : 새로 심는 뿌리 상한(기존 가닥 수 대비) — boost 2.0이면 1.0 이상 필요
   // frontBoost  : 앞쪽(|θ|≤backSideThDeg) 목표 배율 — 1.0이면 옆·뒤와 같은 면적당 가닥수.
   //               2.0 = 앞쪽은 가르마·헤어라인에서 두피가 먼저 비쳐 보이므로 조금 더 촘촘히
   // frontMinFill: 앞쪽은 목표의 이 비율 미만이면 채움 (옆·뒤는 minFill)
   // frontBaldRescue: 앞쪽에서 "대머리"로 판정됐지만 두피 안(두피밖 아님)이고 phi≤frontPhiMax 인 셀도 채움
   //               (정면 사진의 가르마 선·광택을 두피로 읽어 생긴 빈 칸 — 로그의 "정면 대머리 5")
-  const ROOT_EVEN = { on: true, backSideThDeg: 56, minFill: 0.9, maxAddFrac: 0.5,
-    frontBoost: 2.0,  frontMinFill: 1.0, frontBaldRescue: true, frontPhiMax: 1.05 };
+  const ROOT_EVEN = { on: true, backSideThDeg: 56, minFill: 0.9, maxAddFrac: 1.2,
+    boost: 2.0, frontBoost: 1.0, frontMinFill: 1.0, frontBaldRescue: true, frontPhiMax: 1.05 };
   window.ROOT_EVEN = ROOT_EVEN;
   function rng(seed) { let t = seed >>> 0; return () => { t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; }; }
   function evenRoots(res) {
@@ -307,8 +309,8 @@
     for (let c = 0; c < N && added < maxAdd; c++) {
       if (!fillable(c) || !(ar(c) > 0)) continue;
       const fr = isFront(c);
-      const have = byCell[c] ? byCell[c].length : 0, want = Math.round(target * ar(c) * (fr ? ROOT_EVEN.frontBoost : 1));
-      if (have >= want * (fr ? ROOT_EVEN.frontMinFill : ROOT_EVEN.minFill) || want - have < 1) continue;
+      const have = byCell[c] ? byCell[c].length : 0, want = Math.round(target * ar(c) * ROOT_EVEN.boost * (fr ? ROOT_EVEN.frontBoost : 1));
+      if (have >= want * (fr || ROOT_EVEN.boost > 1 ? ROOT_EVEN.frontMinFill : ROOT_EVEN.minFill) || want - have < 1) continue;
       const pi = c / NT | 0, ti = c % NT;
       // 모양 본보기: 같은 셀 가닥 → 없으면 같은 줄 이웃 셀 가닥(모양만 빌리고 원래 가닥은 그대로 둠)
       let src = byCell[c] && byCell[c].length ? byCell[c] : null;
@@ -336,7 +338,7 @@
       cellsFixed++; if (!ok(c)) rescuedCells++;
     }
     console.log('[뿌리 고르게] 기준 = 옆·뒤 셀 면적당 가닥 중앙값 ' + target.toFixed(1) + ' · 모자란 셀 ' + cellsFixed +
-      '개에 새 뿌리 ' + added + '개 추가(앞쪽 ' + frontAdded + ' · 앞쪽 목표 ×' + ROOT_EVEN.frontBoost + ' · 대머리 판정 구제 ' + rescuedCells + '칸) · 섹션 ' +
+      '개에 새 뿌리 ' + added + '개 추가(앞쪽 ' + frontAdded + ' · 전체 목표 ×' + ROOT_EVEN.boost + ' · 앞쪽 추가 ×' + ROOT_EVEN.frontBoost + ' · 대머리 판정 구제 ' + rescuedCells + '칸) · 섹션 ' +
       Object.keys(secAdd).map(k => k + ' +' + secAdd[k]).join(' ') + ' · 다른 셀에서 옮긴 가닥 0 · 끄기 ROOT_EVEN.on=false');
     return res;
   }
