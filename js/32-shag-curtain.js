@@ -32,12 +32,12 @@
       nape: 1.35             // 쇄골 바로 위 (가장 긴 곳, 가늘게)
     },
     cut: {
-      crown:     set({ technique: 'uniform',    elevation: 100, texture: 80, density: 60, curlDir: 25 }, { volShare: 70 }),   // 90° 이상 들어 자른 짧은 층
-      front:     set({ technique: 'uniform',    elevation: 40,  texture: 70, density: 85, line: 30, curlDir: 35 }, { volShare: 40 }),
-      temple:    set({ technique: 'uniform',    elevation: 90,  texture: 75, density: 75, overdirection: 40, curlDir: 30 }),
-      side:      set({ technique: 'uniform',    elevation: 85,  texture: 80, density: 55, curlDir: 40 }, { volShare: 60 }),   // 끝을 많이 쳐내 가볍게
-      occipital: set({ technique: 'uniform',    elevation: 90,  texture: 80, density: 55, curlDir: 35 }, { volShare: 60 }),
-      nape:      set({ technique: 'uniform',    elevation: 60,  texture: 85, density: 45, line: 20, curlDir: 40 })          // 목덜미는 얇고 뾰족하게
+      crown:     set({ technique: 'uniform',    elevation: 100, texture: 80, density: 100, curlDir: 25 }, { volShare: 70 }),   // 90° 이상 들어 자른 짧은 층
+      front:     set({ technique: 'uniform',    elevation: 40,  texture: 70, density: 100, line: 30, curlDir: 35 }, { volShare: 40 }),
+      temple:    set({ technique: 'uniform',    elevation: 90,  texture: 75, density: 100, overdirection: 40, curlDir: 30 }),
+      side:      set({ technique: 'uniform',    elevation: 85,  texture: 80, density: 100, curlDir: 40 }, { volShare: 60 }),   // 끝을 많이 쳐내 가볍게
+      occipital: set({ technique: 'uniform',    elevation: 90,  texture: 80, density: 100, curlDir: 35 }, { volShare: 60 }),
+      nape:      set({ technique: 'uniform',    elevation: 60,  texture: 85, density: 100, line: 20, curlDir: 40 })          // 목덜미는 얇고 뾰족하게
     },
     perm: { curl: 28, wave: 97 },     // v2: 굵은 롤 + 약한 컬 → 섀그는 곱슬이 아니라 끝만 흐트러진 결 (v1 wave 80 = 가는 로드 → 잔곱슬)
     styling: { sweep: 0, volume: 58, flow: 45, part: 0, partAmt: 55, finish: 40, sleek: 10 },   // part 0 = 가운데 가르마(커튼뱅이 양쪽으로 갈라짐), sleek 낮게 = 헝클어진 텍스처

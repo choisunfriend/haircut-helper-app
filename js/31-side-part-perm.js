@@ -259,7 +259,7 @@
   // frontBaldRescue: 앞쪽에서 "대머리"로 판정됐지만 두피 안(두피밖 아님)이고 phi≤frontPhiMax 인 셀도 채움
   //               (정면 사진의 가르마 선·광택을 두피로 읽어 생긴 빈 칸 — 로그의 "정면 대머리 5")
   const ROOT_EVEN = { on: true, backSideThDeg: 56, minFill: 0.9, maxAddFrac: 1.2,
-    boost: 2.0, frontBoost: 1.5, frontMinFill: 1.0, frontBaldRescue: true, frontPhiMax: 1.05 };
+    boost: 1.2, frontBoost: 1.5, frontMinFill: 1.0, frontBaldRescue: true, frontPhiMax: 1.05 };
   window.ROOT_EVEN = ROOT_EVEN;
   function rng(seed) { let t = seed >>> 0; return () => { t += 0x6D2B79F5; let r = Math.imul(t ^ t >>> 15, 1 | t); r ^= r + Math.imul(r ^ r >>> 7, 61 | r); return ((r ^ r >>> 14) >>> 0) / 4294967296; }; }
   function evenRoots(res) {
