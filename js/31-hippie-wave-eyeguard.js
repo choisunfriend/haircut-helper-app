@@ -182,6 +182,31 @@
     side_part_perm:      { tipAt: { front: 0.43 } }   // 원래 0.46
   }, W.STYLE_TUNES || {});
 
+  // 레게(땋은 머리) 얼굴 쪽 처리 — 땋은 줄은 조정된 가닥 경로를 그대로 따라가므로
+  // 가닥 단계에서 정리하면 됩니다.
+  //   'aside' : 뒤로 넘김 + 가운데 가르마로 양옆으로 제낌(기본)
+  //   'cut'   : 앞머리 목표 0.42(눈썹)를 줘서 눈가림 방지가 얼굴 앞 줄을 자르게
+  //   'none'  : 원래대로(얼굴 앞으로 내려옴)
+  var BRAID_FACE_MODES = {
+    aside: { styling: { sweep: 45, part: 0, partAmt: 85 } },
+    cut:   { tipAt: { front: 0.42 } },
+    none:  { dropTipFront: true, styling: { sweep: 0, partAmt: 0 } }
+  };
+  W.setBraidFace = function (mode, id) {
+    id = id || 'reggae_twist';
+    var m = BRAID_FACE_MODES[mode];
+    if (!m) { console.warn(TAG + ' setBraidFace: aside | cut | none'); return; }
+    var spec = null;
+    try { spec = getStyleSpec(id); } catch (e) {}
+    if (spec) {                       // 이전 모드 흔적 지우기
+      if (spec.tipAt) { delete spec.tipAt.front; if (!Object.keys(spec.tipAt).length) delete spec.tipAt; }
+    }
+    STYLE_TUNES[id] = JSON.parse(JSON.stringify(m));
+    console.log(TAG + ' ' + id + ' 얼굴 쪽 = ' + mode + ' — 스타일을 다시 적용하면 반영됩니다');
+    return mode;
+  };
+  STYLE_TUNES.reggae_twist = STYLE_TUNES.reggae_twist || JSON.parse(JSON.stringify(BRAID_FACE_MODES.aside));
+
   // ── 래핑 ──
   function wrap(name, make) {
     var f = W[name];
@@ -281,8 +306,10 @@
       var spec = null;
       try { spec = getStyleSpec(id); } catch (e) {}
       var tune = STYLE_TUNES[id];
-      if (spec && tune && tune.tipAt) {
-        spec.tipAt = Object.assign({}, spec.tipAt, tune.tipAt);   // specPatch 뒤에 덮음
+      if (spec && tune) {
+        if (tune.tipAt) spec.tipAt = Object.assign({}, spec.tipAt, tune.tipAt);        // specPatch 뒤에 덮음
+        if (tune.styling) spec.styling = Object.assign({}, spec.styling, tune.styling);
+        if (tune.dropTipFront && spec.tipAt) { delete spec.tipAt.front; if (!Object.keys(spec.tipAt).length) delete spec.tipAt; }
       }
       if (spec && spec.tipAt && spec.tipAt.front > 0.46 && spec.tipAt.front < 0.56 && spec.eyeGuard !== false) {
         console.warn(TAG + ' ' + id + ' tipAt.front ' + spec.tipAt.front +
