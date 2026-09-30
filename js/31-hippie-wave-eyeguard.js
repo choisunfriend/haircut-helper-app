@@ -16,10 +16,10 @@
  *       - 기본 앞머리 끝: 눈높이 → 눈썹~윗눈꺼풀 사이(defaultTipFaceFrac). 프로필이 직접 정하면 그 값.
  *       - 앞머리선 바닥: 눈 아래 40% → 윗눈꺼풀 위(lineFloorFaceFrac).
  *       - 역산 중엔 시험 길이로 앞머리선을 계산(역산 ↔ 최종 일치).
- *       - 스펙 tipAt.front 상한 maxFrontTipAt.
+ *       - 한계선은 스타일의 tipAt.front를 따름(중앙 허용 목록 없음, tipAt.front 없으면 제한 없음).
  *       - 마지막 안전망: 모든 변형이 끝난 가닥이 "눈 상자"(얼굴 앞, 눈 높이, 눈 폭)에 들어가면
  *         윗눈꺼풀 선에서 자름. passFrac 만큼은 동공선까지 허용(시스루 결).
- *     끄기: EYE_GUARD.on = false. 일부러 눈을 넘기는 스타일은 EYE_GUARD.allow에.
+ *     끄기: EYE_GUARD.on = false · 스타일별 spec.eyeGuard = false.
  *
  * (2) Men's Hippie Perm → 레퍼런스(미디엄 S웨이브 · 시스루 앞머리 · 둥근 볼륨)로 재조정.
  */
@@ -35,7 +35,6 @@
     defaultTipFaceFrac: -0.14, // 프로필이 tipFaceFrac을 안 정했을 때 심는 앞머리 끝(눈썹과 윗눈꺼풀 사이)
     lineFloorFaceFrac: -0.06,  // 앞머리선이 내려갈 수 있는 가장 낮은 곳(윗눈꺼풀 위)
     fixSolveLength: true,      // 역산 중 fringeLineY가 시험 길이를 쓰게
-    maxFrontTipAt: 0.45,       // 스펙 tipAt.front 상한(0.5 = 눈높이)
     trim: true,                // 최종 눈 상자 트림
     boxTopFaceFrac: -0.06,     // 눈 상자 윗선(= 트림선)
     boxBotFaceFrac: 0.3,       // 눈 상자 아랫선(광대)
@@ -45,7 +44,7 @@
     passFaceFrac: 0.0,         // = 동공선
     frontCapToSide: true,      // front 가닥 끝 ≤ 옆머리 끝
     frontCapMargin: 0.04,      // tipAt 단위 여유
-    allow: ['curtain_bang_shag', 'long_blowout_waves', 'reggae_twist'],
+    frontMargin: 0.03,         // 스타일 앞머리 목표(tipAt.front)보다 이만큼 아래까지는 허용
     stats: { trimmed: 0, seen: 0 }
   }, W.EYE_GUARD || {});
 
@@ -57,8 +56,26 @@
     var s = st();
     return EYE_GUARD._applying || (s && s.specAppliedId) || null;
   }
-  function allowed(id) { return !!id && EYE_GUARD.allow.indexOf(id) >= 0; }
-  function active() { return EYE_GUARD.on && mqOn() && !allowed(currentStyleId()); }
+  // 가드는 "스타일이 스스로 정한 앞머리 길이"를 따릅니다. 중앙 허용 목록 없음.
+  //   · 스펙에 tipAt.front가 없으면 → 제한 없음(기본)
+  //   · 스펙에 eyeGuard:false → 제한 없음
+  //   · tipAt.front가 있으면 → 그 목표 + frontMargin 아래로만 못 내려감.
+  //     눈을 덮는 스타일(목표 > 0.5)은 한계선도 눈 아래로 내려가서 사실상 안 걸립니다.
+  function frontTarget() {
+    var id = currentStyleId(), spec = null;
+    try { spec = id ? getStyleSpec(id) : null; } catch (e) {}
+    if (!spec || spec.eyeGuard === false || !spec.tipAt || typeof spec.tipAt.front !== 'number') return null;
+    return spec.tipAt.front;
+  }
+  function active() { return EYE_GUARD.on && mqOn() && frontTarget() != null; }
+  // 스타일 목표에서 나온 한계 y (tipAt → 모델 y). 이보다 낮게 내려가면 자름.
+  function limitY() {
+    var t = frontTarget();
+    if (t == null) return null;
+    var ref = null;
+    try { ref = headHeightRef(); } catch (e) {}
+    return ref ? ref.yTop - (t + EYE_GUARD.frontMargin) * ref.H : null;
+  }
 
   function profileSetsTip() {
     var sb = W.STYLE_BASE;
@@ -107,7 +124,11 @@
   // 모든 변형 뒤의 가닥을 눈 상자에서 자름
   function eyeBoxTrim(pts, g) {
     if (!pts || pts.length < 3 || !g) return pts;
-    var lim = hash3(pts[0]) < EYE_GUARD.passFrac ? g.passY : g.topY;
+    var ly = limitY();
+    var top = ly == null ? g.topY : Math.min(g.topY, ly);
+    var pass = ly == null ? g.passY : Math.min(g.passY, ly);
+    if (top <= g.botY) return pts;                // 스타일 목표가 눈 상자 아래 → 안 걸림
+    var lim = hash3(pts[0]) < EYE_GUARD.passFrac ? pass : top;
     for (var i = 1; i < pts.length; i++) {
       var p = pts[i];
       if (!(p.y < lim) || !(p.y > g.botY) || !(Math.abs(p.x) < g.xHalf)) continue;
@@ -153,6 +174,14 @@
     return pts;
   }
 
+  // 스타일별 수치 보정(데이터). 눈높이(0.5)에 걸려 있던 기존 스펙 목표를 눈썹~눈꺼풀로.
+  // 제한이 아니라 스타일 값 자체를 고친 것 — 스타일마다 여기서 바꾸면 됩니다.
+  var STYLE_TUNES = W.STYLE_TUNES = Object.assign({
+    layered_bob_hush:    { tipAt: { front: 0.45 } },  // 원래 0.52(specPatch)
+    wavy_bob_seethrough: { tipAt: { front: 0.44 } },  // 원래 0.5
+    side_part_perm:      { tipAt: { front: 0.43 } }   // 원래 0.46
+  }, W.STYLE_TUNES || {});
+
   // ── 래핑 ──
   function wrap(name, make) {
     var f = W[name];
@@ -171,6 +200,10 @@
       var y = orig.apply(this, arguments);
       if (y == null || !active() || profileSetsTip()) return y;
       var g = geom();
+      // 심는 앞머리 끝 = 스타일 목표(tipAt.front) 높이
+      var t = frontTarget(), ref = null;
+      try { ref = headHeightRef(); } catch (e) {}
+      if (t != null && ref) return ref.yTop - t * ref.H;
       return g ? cy - EYE_GUARD.defaultTipFaceFrac * g.fh : y;
     };
   });
@@ -181,7 +214,9 @@
       var y = orig.apply(this, arguments);
       if (y == null || sec !== 'front' || !active()) return y;
       var g = geom();
-      return g ? Math.max(y, g.floorY) : y;
+      if (!g) return y;
+      var ly = limitY();
+      return Math.max(y, ly == null ? g.floorY : Math.min(g.floorY, ly));
     };
   });
 
@@ -209,17 +244,51 @@
     };
   });
 
+  // e. 모든 스타일 공통 기본값 (히피펌에서 효과 본 것) — 프로필이 직접 정하면 그 값이 우선
+  //    · MANNEQUIN.lenPct 0.9 : 섹션 최장(어깨·옷 따라간 이상치) 대신 90백분위 → 긴 끄트머리 방지
+  //    · MQ_FRINGE.crownAllAround false : 크라운을 뒤까지 눈썹선에서 자르지 않음 → 크라운 역산 "못 풂" 방지
+  var COMMON_DEFAULTS = W.STYLE_COMMON_DEFAULTS = Object.assign({
+    on: true,
+    MANNEQUIN: { lenPct: 0.9 },
+    MQ_FRINGE: { crownAllAround: false }
+  }, W.STYLE_COMMON_DEFAULTS || {});
+  function applyCommonDefaults(id) {
+    if (!COMMON_DEFAULTS.on) return;
+    var sb = W.STYLE_BASE, cfg = (sb && sb.active && sb.active.config) || {};
+    var tgt = {
+      MANNEQUIN: typeof MANNEQUIN !== 'undefined' ? MANNEQUIN : null,
+      MQ_FRINGE: typeof MQ_FRINGE !== 'undefined' ? MQ_FRINGE : null
+    };
+    var rebuild = false, set = [];
+    for (var obj in tgt) {
+      if (!tgt[obj] || !COMMON_DEFAULTS[obj]) continue;
+      for (var key in COMMON_DEFAULTS[obj]) {
+        if (cfg[obj] && key in cfg[obj]) continue;          // 프로필이 정함
+        if (tgt[obj][key] === COMMON_DEFAULTS[obj][key]) continue;
+        tgt[obj][key] = COMMON_DEFAULTS[obj][key];
+        set.push(obj + '.' + key + '=' + COMMON_DEFAULTS[obj][key]);
+        if (obj === 'MANNEQUIN') rebuild = true;           // 길이 원료가 바뀜 → 뿌리 다시 심기
+      }
+    }
+    if (rebuild) { var s = st(); if (s) s.hair3Dmannequin = null; }
+    if (set.length) console.log(TAG + ' 공통 기본값 ' + id + ': ' + set.join(' · ') +
+      ' (끄기 STYLE_COMMON_DEFAULTS.on=false)');
+  }
+
   // d. 스펙 tipAt.front 상한 + 적용 중 스타일 id 표시
   wrap('applyStyleSpec', function (orig) {
     return function (id) {
       var spec = null;
       try { spec = getStyleSpec(id); } catch (e) {}
-      if (EYE_GUARD.on && spec && spec.tipAt && typeof spec.tipAt.front === 'number' &&
-          !allowed(id) && spec.tipAt.front > EYE_GUARD.maxFrontTipAt) {
-        console.log(TAG + ' ' + id + ' tipAt.front ' + spec.tipAt.front + ' → ' + EYE_GUARD.maxFrontTipAt +
-          ' (0.5 = 눈높이)');
-        spec.tipAt.front = EYE_GUARD.maxFrontTipAt;
+      var tune = STYLE_TUNES[id];
+      if (spec && tune && tune.tipAt) {
+        spec.tipAt = Object.assign({}, spec.tipAt, tune.tipAt);   // specPatch 뒤에 덮음
       }
+      if (spec && spec.tipAt && spec.tipAt.front > 0.46 && spec.tipAt.front < 0.56 && spec.eyeGuard !== false) {
+        console.warn(TAG + ' ' + id + ' tipAt.front ' + spec.tipAt.front +
+          ' — 눈높이(0.5) 근처 목표입니다. 눈썹 0.41 · 윗눈꺼풀 0.465 · 눈 아래로 덮을 거면 0.55↑');
+      }
+      applyCommonDefaults(id);
       EYE_GUARD._applying = id;
       EYE_GUARD.stats.trimmed = 0;
       EYE_GUARD.stats.seen = 0;
@@ -227,10 +296,11 @@
       _geo = null;
       try { return orig.apply(this, arguments); }
       finally {
+        var tgt = frontTarget(), hadTarget = tgt != null, psTip = profileSetsTip();
         EYE_GUARD._applying = null;
         if (EYE_GUARD.on) {
-          console.log(TAG + ' ' + id + (allowed(id) ? ' — 허용 스타일(가드 끔)' :
-            ' — 앞머리 끝 기본 ' + EYE_GUARD.defaultTipFaceFrac + (profileSetsTip() ? '(프로필 값 사용)' : '') +
+          console.log(TAG + ' ' + id + (!hadTarget ? ' — 앞머리 목표 없음(제한 없음)' :
+            ' — 앞머리 목표 tipAt ' + tgt + '(한계 +' + EYE_GUARD.frontMargin + ')' + (psTip ? ' · 심는 끝은 프로필 값' : '') +
             ' · 바닥 ' + EYE_GUARD.lineFloorFaceFrac + ' · 역산 중 눈 상자에서 자른 가닥 ' +
             EYE_GUARD.stats.trimmed + '/' + EYE_GUARD.stats.seen +
             ' · 옆선 상한으로 자른 front 가닥 ' + (EYE_GUARD.stats.capped || 0)));
@@ -432,6 +502,6 @@
   };
 
   console.log(TAG + ' 설치 — 앞머리 기본 끝 ' + EYE_GUARD.defaultTipFaceFrac + ' · 바닥 ' +
-    EYE_GUARD.lineFloorFaceFrac + ' · tipAt.front 상한 ' + EYE_GUARD.maxFrontTipAt +
-    ' · 허용 ' + EYE_GUARD.allow.join(', ') + ' · 끄기 EYE_GUARD.on=false');
+    EYE_GUARD.lineFloorFaceFrac + ' · 한계선 = 스타일 tipAt.front + ' + EYE_GUARD.frontMargin +
+    ' · 스타일별 끄기 spec.eyeGuard=false · 전체 끄기 EYE_GUARD.on=false');
 })();
