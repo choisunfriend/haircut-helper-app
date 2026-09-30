@@ -48,6 +48,21 @@
     stats: { trimmed: 0, seen: 0 }
   }, W.EYE_GUARD || {});
 
+  // headHeightRef()는 첫 줄에서 state.hair3Dneutral 게터를 읽는다. 마네킹이 비어 있으면 게터가
+  // buildMannequinHair3D()를 부르고, 빌드가 앞머리를 심느라 mqFringeTipY(= 이 파일의 래퍼)를 부르면
+  // 다시 headHeightRef → 게터 → 빌드 … 무한 재귀(사이드파트 멈춤의 원인).
+  // 같은 식을 게터를 거치지 않고 계산한다(마네킹 CY = 원본 CY).
+  function safeHeadRef() {
+    var s = st();
+    if (!s) return null;
+    var h = s.hair3Dmannequin || s._hair3Dneutral;
+    var E = null;
+    try { E = getHeadEllipsoid(); } catch (e) {}
+    if (!h || !E || !(E.b > 1e-6)) return null;
+    var CY = h.CY != null ? h.CY : (typeof SCALP_CENTER_Y !== 'undefined' ? SCALP_CENTER_Y : 0.15);
+    return { yTop: CY + E.b, H: 2 * E.b };
+  }
+
   function has(name) { return typeof W[name] === 'function'; }
   function st() { return typeof state !== 'undefined' ? state : null; }
   function mqOn() { return typeof MANNEQUIN !== 'undefined' && !!MANNEQUIN.on; }
@@ -73,7 +88,7 @@
     var t = frontTarget();
     if (t == null) return null;
     var ref = null;
-    try { ref = headHeightRef(); } catch (e) {}
+    try { ref = safeHeadRef(); } catch (e) {}
     return ref ? ref.yTop - (t + EYE_GUARD.frontMargin) * ref.H : null;
   }
 
@@ -157,7 +172,7 @@
     var t = spec && spec.tipAt && spec.tipAt.side;
     if (typeof t !== 'number') return pts;
     var ref = null;
-    try { ref = headHeightRef(); } catch (e) {}
+    try { ref = safeHeadRef(); } catch (e) {}
     if (!ref) return pts;
     var capY = ref.yTop - (t + EYE_GUARD.frontCapMargin) * ref.H;
     for (var i = 1; i < pts.length; i++) {
@@ -202,7 +217,7 @@
       var g = geom();
       // 심는 앞머리 끝 = 스타일 목표(tipAt.front) 높이
       var t = frontTarget(), ref = null;
-      try { ref = headHeightRef(); } catch (e) {}
+      try { ref = safeHeadRef(); } catch (e) {}
       if (t != null && ref) return ref.yTop - t * ref.H;
       return g ? cy - EYE_GUARD.defaultTipFaceFrac * g.fh : y;
     };
