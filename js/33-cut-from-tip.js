@@ -10,6 +10,8 @@
  *          · 호출 동안만 lengthStrand3D를 바꿔치기: 비율 < 1이면 자르지 않고 비율만 기억
  *          · 비율 > 1(기르기)은 예전 그대로(늘린 뒤 스타일)
  *          · 앞머리 선 트림(mqTrimAtFringeLine)은 그대로 두고, 남길 길이는 원래 가닥 기준
+ *          · 컬 있는 가닥은 덜 잘림: 잘라낼 양 × hairShrinkFactor(hairEffectiveCurl)
+ *            (직모·펌 없음 = ×1 그대로 · 끄기 CUT_FROM_TIP.curlSpare = false)
  *    끄기: CUT_FROM_TIP.on = false (예전 동작)
  *
  * ② 증상: ⛶ 를 눌러도 전체 화면이 안 되고 옆으로만 조금 넓어졌다(캔버스는 예전 크기).
@@ -22,7 +24,7 @@
   var W = window;
 
   /* ---------- ① 커트는 끝에서부터 ---------- */
-  var CUT_FROM_TIP = W.CUT_FROM_TIP = Object.assign({ on: true, stats: { cut: 0 } }, W.CUT_FROM_TIP || {});
+  var CUT_FROM_TIP = W.CUT_FROM_TIP = Object.assign({ on: true, curlSpare: true, stats: { cut: 0, curlSpared: 0 } }, W.CUT_FROM_TIP || {});
 
   function arcLen(pts) {
     var s = 0;
@@ -51,6 +53,20 @@
     return out;
   }
   W.cutFromTipTruncate = truncateArc;
+
+  // 잘라낼 양에 곱할 계수(1 = 그대로, 작을수록 덜 잘림). 직모·펌 없음이면 유효컬 0 → 1.
+  function curlSpare(strand, ratio) {
+    if (!CUT_FROM_TIP.curlSpare) return 1;
+    try {
+      if (typeof hairEffectiveCurl !== 'function' || typeof hairShrinkFactor !== 'function') return 1;
+      var sec = state && state.sections && state.sections[strand.sec];
+      var curl = sec && typeof sec.curl === 'number' ? sec.curl : 0;
+      var eff = hairEffectiveCurl(curl, strand.sec, ratio);
+      if (!(eff > 0)) return 1;
+      var f = hairShrinkFactor(eff);
+      return isFinite(f) ? Math.max(0.3, Math.min(1, f)) : 1;
+    } catch (e) { return 1; }
+  }
 
   var origAdj = W.adjustStrandGeom;
   var origLen = W.lengthStrand3D;
@@ -85,7 +101,11 @@
       if (c.ratio == null || !out || out.length < 2) return out;
       // 남길 길이 = 원래 가닥 호길이 × 비율(절대값). 스타일 연산은 호길이를 거의 보존하고,
       // 앞머리 선·눈 상자 트림으로 이미 더 짧아졌으면 아무것도 안 한다(두 번 줄이지 않음).
-      var keep = c.ratio * c.L0, have = arcLen(out);
+      var cutFrac = 1 - c.ratio;
+      // 컬 있는 가닥은 덜 잘림 — 잘라낼 양 × 수축 계수(08-cut-engine의 모발상태·유효컬 그대로)
+      var k = curlSpare(strand, c.ratio);
+      if (k < 1) { cutFrac *= k; CUT_FROM_TIP.stats.curlSpared++; }
+      var keep = (1 - cutFrac) * c.L0, have = arcLen(out);
       if (!(keep < have - 1e-9)) return out;
       CUT_FROM_TIP.stats.cut++;
       return truncateArc(out, keep);
