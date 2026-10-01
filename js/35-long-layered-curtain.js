@@ -44,7 +44,7 @@
       occipital: sec({ technique: 'uniform', elevation: 45, texture: 40, curlDir: 20 }, { volShare: 60 }),
       nape:      sec({ technique: 'uniform', elevation: 25, texture: 35, line: 40, curlDir: 20 })
     },
-    perm: { curl: 32, wave: 92 },          // 굵은 컬 · 넓은 웨이브
+    perm: { curl: 0, wave: 0 },            // 컬·웨이브 모두 풂 (스트레이트)
     styling: {
       sweep: 18,      // 앞머리를 뒤·옆으로 넘겨 얼굴을 열어 둠
       volume: 58,     // 뿌리 볼륨(벨크로 롤)
@@ -54,7 +54,7 @@
       finish: 80,
       sleek: 15
     },
-    globalCurl: 32,
+    globalCurl: 0,
     color: '#5A4030'
   };
 
@@ -62,9 +62,9 @@
     id: ID,
     specId: ID,
     name: 'Long Layers + Curtain Bangs',
-    tags: 'Center part · Cheekbone curtain bangs · Soft waves',
+    tags: 'Center part · Cheekbone curtain bangs · Sleek coated straight',
     length: 95,
-    curl: 32,
+    curl: 0,
     volume: 58,
     colorHex: '#5A4030'
   });
@@ -82,14 +82,15 @@
         CURL3D_FIX: { ampGamma: 0.72 },
         VOLUME3D: { AMP: 0.17 },
         MQ_FRINGE: { on: true, tipFaceFrac: 0.4, lineHalfX: 1.1, lineGain: 1, crownAllAround: false },
-        HAIR_DYE: { sMax: 1.25, highlightK: 0.85, glossDesat: 0.6 }
+        HAIR_DYE: { sMax: 1.25, highlightK: 1.0, glossDesat: 0.5 }
       },
       volBase: 1,
-      after: { front: { curl: 12 }, temple: { curl: 16 } },
+      after: { front: { curl: 0 }, temple: { curl: 0 } },
       // 광택: 결 하이라이트를 세게(spec)·넓게(specPow↓) → 찰랑이는 광택 띠
-      shade: { ao: 0.5, lumCap: 1.35, spec: 0.45, specPow: 34 },
-      // 36-gloss-wave.js: 잔결 제거 · 굵은 웨이브 살림 · 색 고르게
-      gloss: { fineCm: 1.2, flowCm: 3.2, waveBoost: 0.3, rootCm: 2, colorSmooth: 0.7 }
+      shade: { ao: 0.55, lumCap: 1.4, spec: 0.62, specPow: 28 },
+      // 36-gloss-wave.js: 코팅 마감 — 색을 가닥 따라 고르게(0.9) + 강한 결 하이라이트(shade)
+      // 컬 풀기: 8cm보다 짧은 굴곡(컬·웨이브·잔결) 전부 제거 → 큰 흐름만 남김
+      gloss: { fineCm: 1.6, flowCm: 8, waveBoost: -1, rootCm: 1.5, colorSmooth: 0.9, colorWin: 6 }
     });
   }
 

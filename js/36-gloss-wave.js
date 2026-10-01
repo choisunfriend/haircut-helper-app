@@ -190,7 +190,7 @@
       memo.set(res, { key: key, out: out });
       if (!G._logged || G._logged !== key) {
         G._logged = key;
-        console.log(TAG + ' 가닥 ' + st.n + '개 매끈하게 — 잔결(<' + cfg.fineCm + 'cm) 제거 · 웨이브(' + cfg.fineCm + '~' + cfg.flowCm +
+        console.log(TAG + ' 가닥 ' + st.n + '개 ' + (cfg.waveBoost <= -1 ? '컬 풂·코팅' : '매끈하게') + ' — 잔결(<' + cfg.fineCm + 'cm) 제거 · 웨이브(' + cfg.fineCm + '~' + cfg.flowCm +
           'cm) ×' + (1 + cfg.waveBoost).toFixed(2) + ' · 평균 이동 ' + (st.dev / Math.max(1, st.n)).toFixed(2) + 'cm · ' +
           Math.round(performance.now() - t0) + 'ms · 끄기 GLOSS_WAVE.on=false');
       }
