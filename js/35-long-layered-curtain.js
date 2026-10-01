@@ -38,7 +38,7 @@
     },
     cut: {
       crown:     sec({ technique: 'uniform', elevation: 75, texture: 40, curlDir: 15 }),
-      front:     sec({ technique: 'uniform', elevation: 30, texture: 55, line: 30, curlDir: 20 }, { volShare: 35 }),
+      front:     sec({ technique: 'uniform', elevation: 30, texture: 55, line: 30, overdirection: 25, curlDir: 35 }, { volShare: 35 }),
       temple:    sec({ technique: 'uniform', elevation: 60, texture: 50, overdirection: 30, curlDir: 25 }),
       side:      sec({ technique: 'uniform', elevation: 45, texture: 45, curlDir: 25 }, { volShare: 65 }),
       occipital: sec({ technique: 'uniform', elevation: 45, texture: 40, curlDir: 20 }, { volShare: 60 }),
@@ -46,11 +46,11 @@
     },
     perm: { curl: 32, wave: 92 },          // 굵은 컬 · 넓은 웨이브
     styling: {
-      sweep: 10,      // 앞머리를 살짝 뒤·옆으로
+      sweep: 18,      // 앞머리를 뒤·옆으로 넘겨 얼굴을 열어 둠
       volume: 58,     // 뿌리 볼륨(벨크로 롤)
       flow: 35,       // 끝은 바깥으로
       part: 0,        // 가운데 가르마
-      partAmt: 70,
+      partAmt: 88,    // 가르마를 또렷하게 → 커튼뱅이 양옆으로 갈라짐
       finish: 55,
       sleek: 15
     },

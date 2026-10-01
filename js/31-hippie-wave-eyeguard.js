@@ -14,12 +14,13 @@
  *       + 역산 뒤에 도는 after(컬 줄이기)·sweep(앞으로 넘김)·gravityDroop이 끝을 더 내림.
  *     고친 것
  *       - 기본 앞머리 끝: 눈높이 → 눈썹~윗눈꺼풀 사이(defaultTipFaceFrac). 프로필이 직접 정하면 그 값.
- *       - 앞머리선 바닥: 눈 아래 40% → 윗눈꺼풀 위(lineFloorFaceFrac).
  *       - 역산 중엔 시험 길이로 앞머리선을 계산(역산 ↔ 최종 일치).
- *       - 한계선은 스타일의 tipAt.front를 따름(중앙 허용 목록 없음, tipAt.front 없으면 제한 없음).
- *       - 마지막 안전망: 모든 변형이 끝난 가닥이 "눈 상자"(얼굴 앞, 눈 높이, 눈 폭)에 들어가면
- *         윗눈꺼풀 선에서 자름. passFrac 만큼은 동공선까지 허용(시스루 결).
- *     끄기: EYE_GUARD.on = false · 스타일별 spec.eyeGuard = false.
+ *     [2026-10-01 제거] 앞머리선 바닥 강제(fringeLineY 클램프), 눈 상자 트림(eyeBoxTrim),
+ *       front 옆선 상한 트림(frontSideCap)은 모두 삭제했습니다.
+ *       원칙: 렌더 단계에서 가닥을 몰래 자르지 않는다. 얼굴을 가리면 그 스타일의
+ *       길이(tipAt)·커트·가르마·넘김 같은 시술 값으로 고친다.
+ *       대신 FACE_COVER_CHECK가 최종 가닥이 얼굴(눈 상자)에 들어가는지 세기만 하고
+ *       어느 섹션을 고쳐야 하는지 콘솔과 진단 패널에 알려줍니다(자르지 않음).
  *
  * (2) Men's Hippie Perm → 레퍼런스(미디엄 S웨이브 · 시스루 앞머리 · 둥근 볼륨)로 재조정.
  */
@@ -27,25 +28,18 @@
   'use strict';
 
   var W = window;
-  var TAG = '[눈가림 방지]';
+  var TAG = '[앞머리 길이]';
 
   var EYE_GUARD = W.EYE_GUARD = Object.assign({
     on: true,
     // 얼굴 계측 단위: faceH = 눈~턱 길이(_mqFaceH). 음수 = 눈 위.
     defaultTipFaceFrac: -0.14, // 프로필이 tipFaceFrac을 안 정했을 때 심는 앞머리 끝(눈썹과 윗눈꺼풀 사이)
-    lineFloorFaceFrac: -0.06,  // 앞머리선이 내려갈 수 있는 가장 낮은 곳(윗눈꺼풀 위)
     fixSolveLength: true,      // 역산 중 fringeLineY가 시험 길이를 쓰게
-    trim: true,                // 최종 눈 상자 트림
-    boxTopFaceFrac: -0.06,     // 눈 상자 윗선(= 트림선)
-    boxBotFaceFrac: 0.3,       // 눈 상자 아랫선(광대)
-    boxHalfXFrac: 0.75,        // 얼굴 반폭 대비 눈 상자 반폭
-    zBackFrac: 0.22,           // 얼굴 정중선 z에서 이만큼(E.c 대비) 뒤까지를 "얼굴 앞"으로
-    passFrac: 0.12,            // 이 비율의 가닥은 passFaceFrac까지 허용(시스루 결)
-    passFaceFrac: 0.0,         // = 동공선
-    frontCapToSide: true,      // front 가닥 끝 ≤ 옆머리 끝
-    frontCapMargin: 0.04,      // tipAt 단위 여유
-    frontMargin: 0.03,         // 스타일 앞머리 목표(tipAt.front)보다 이만큼 아래까지는 허용
-    stats: { trimmed: 0, seen: 0 }
+    // 아래 값은 FACE_COVER_CHECK(검사 전용)가 쓰는 얼굴 상자 — 자르는 데 쓰지 않음
+    boxTopFaceFrac: -0.06,     // 상자 윗선(윗눈꺼풀)
+    boxBotFaceFrac: 0.3,       // 상자 아랫선(광대)
+    boxHalfXFrac: 0.75,        // 얼굴 반폭 대비 상자 반폭
+    zBackFrac: 0.22
   }, W.EYE_GUARD || {});
 
   // headHeightRef()는 첫 줄에서 state.hair3Dneutral 게터를 읽는다. 마네킹이 비어 있으면 게터가
@@ -71,11 +65,7 @@
     var s = st();
     return EYE_GUARD._applying || (s && s.specAppliedId) || null;
   }
-  // 가드는 "스타일이 스스로 정한 앞머리 길이"를 따릅니다. 중앙 허용 목록 없음.
-  //   · 스펙에 tipAt.front가 없으면 → 제한 없음(기본)
-  //   · 스펙에 eyeGuard:false → 제한 없음
-  //   · tipAt.front가 있으면 → 그 목표 + frontMargin 아래로만 못 내려감.
-  //     눈을 덮는 스타일(목표 > 0.5)은 한계선도 눈 아래로 내려가서 사실상 안 걸립니다.
+  // 스타일이 스스로 정한 앞머리 길이(tipAt.front). 심는 앞머리 끝을 이 높이에 맞추는 데만 씀.
   function frontTarget() {
     var id = currentStyleId(), spec = null;
     try { spec = id ? getStyleSpec(id) : null; } catch (e) {}
@@ -83,15 +73,6 @@
     return spec.tipAt.front;
   }
   function active() { return EYE_GUARD.on && mqOn() && frontTarget() != null; }
-  // 스타일 목표에서 나온 한계 y (tipAt → 모델 y). 이보다 낮게 내려가면 자름.
-  function limitY() {
-    var t = frontTarget();
-    if (t == null) return null;
-    var ref = null;
-    try { ref = safeHeadRef(); } catch (e) {}
-    return ref ? ref.yTop - (t + EYE_GUARD.frontMargin) * ref.H : null;
-  }
-
   function profileSetsTip() {
     var sb = W.STYLE_BASE;
     var p = sb && sb.active;
@@ -117,9 +98,7 @@
           var halfX = prof && prof.halfX > 0 ? prof.halfX : E.a * 0.95;
           v = {
             E: E, CY: CY, fh: fh, prof: prof,
-            floorY: CY - EYE_GUARD.lineFloorFaceFrac * fh,
             topY: CY - EYE_GUARD.boxTopFaceFrac * fh,
-            passY: CY - EYE_GUARD.passFaceFrac * fh,
             botY: CY - EYE_GUARD.boxBotFaceFrac * fh,
             xHalf: halfX * EYE_GUARD.boxHalfXFrac,
             zBack: EYE_GUARD.zBackFrac * E.c
@@ -131,62 +110,16 @@
     return v;
   }
 
-  function hash3(p) {
-    var t = Math.sin(p.x * 127.1 + p.y * 311.7 + p.z * 74.7) * 43758.5453;
-    return t - Math.floor(t);
-  }
-
-  // 모든 변형 뒤의 가닥을 눈 상자에서 자름
-  function eyeBoxTrim(pts, g) {
-    if (!pts || pts.length < 3 || !g) return pts;
-    var ly = limitY();
-    var top = ly == null ? g.topY : Math.min(g.topY, ly);
-    var pass = ly == null ? g.passY : Math.min(g.passY, ly);
-    if (top <= g.botY) return pts;                // 스타일 목표가 눈 상자 아래 → 안 걸림
-    var lim = hash3(pts[0]) < EYE_GUARD.passFrac ? pass : top;
+  // 가닥 하나가 얼굴 상자(윗눈꺼풀~광대, 눈 폭, 얼굴 앞)에 들어가는지 — 검사만 함
+  function coversFace(pts, g) {
+    if (!pts || pts.length < 2 || !g) return false;
     for (var i = 1; i < pts.length; i++) {
       var p = pts[i];
-      if (!(p.y < lim) || !(p.y > g.botY) || !(Math.abs(p.x) < g.xHalf)) continue;
+      if (!(p.y < g.topY) || !(p.y > g.botY) || !(Math.abs(p.x) < g.xHalf)) continue;
       var zf = g.prof ? g.prof.zAt(p.y) : g.E.c;
-      if (!(p.z > zf - g.zBack)) continue;
-      var out = pts.slice(0, i);
-      var q = pts[i - 1];
-      if (q.y >= lim && q.y - p.y > 1e-9) {
-        var t = (q.y - lim) / (q.y - p.y);
-        out.push({ x: q.x + (p.x - q.x) * t, y: lim, z: q.z + (p.z - q.z) * t });
-      }
-      EYE_GUARD.stats.trimmed++;
-      return out.length >= 2 ? out : pts.slice(0, 2);
+      if (p.z > zf - g.zBack) return true;
     }
-    return pts;
-  }
-
-  // front 섹션 가닥은 옆머리 끝(spec.tipAt.side)보다 내려가지 않게.
-  // 앞머리선 트림(mqTrimAtFringeLine)은 얼굴 앞(halfX 안)만 자르므로, 얼굴 가장자리에서 난
-  // front 가닥은 역산된 front 길이(앞머리 맞추느라 95 근처)를 그대로 받아 길게 늘어졌음.
-  function frontSideCap(pts) {
-    if (!pts || pts.length < 3) return pts;
-    var id = currentStyleId();
-    var spec = null;
-    try { spec = id ? getStyleSpec(id) : null; } catch (e) {}
-    var t = spec && spec.tipAt && spec.tipAt.side;
-    if (typeof t !== 'number') return pts;
-    var ref = null;
-    try { ref = safeHeadRef(); } catch (e) {}
-    if (!ref) return pts;
-    var capY = ref.yTop - (t + EYE_GUARD.frontCapMargin) * ref.H;
-    for (var i = 1; i < pts.length; i++) {
-      if (pts[i].y >= capY) continue;
-      var q = pts[i - 1], p = pts[i];
-      var out = pts.slice(0, i);
-      if (q.y > capY && q.y - p.y > 1e-9) {
-        var k = (q.y - capY) / (q.y - p.y);
-        out.push({ x: q.x + (p.x - q.x) * k, y: capY, z: q.z + (p.z - q.z) * k });
-      }
-      EYE_GUARD.stats.capped = (EYE_GUARD.stats.capped || 0) + 1;
-      return out.length >= 2 ? out : pts.slice(0, 2);
-    }
-    return pts;
+    return false;
   }
 
   // 스타일별 수치 보정(데이터). 눈높이(0.5)에 걸려 있던 기존 스펙 목표를 눈썹~눈꺼풀로.
@@ -223,19 +156,7 @@
     };
   });
 
-  // b. 앞머리선 바닥
-  wrap('fringeLineY', function (orig) {
-    return function (sec) {
-      var y = orig.apply(this, arguments);
-      if (y == null || sec !== 'front' || !active()) return y;
-      var g = geom();
-      if (!g) return y;
-      var ly = limitY();
-      return Math.max(y, ly == null ? g.floorY : Math.min(g.floorY, ly));
-    };
-  });
-
-  // c. 역산 중 시험 길이 + 최종 눈 상자 트림
+  // c. 역산 중 시험 길이 (자르기 없음)
   wrap('adjustStrandGeom', function (orig) {
     return function (strand, len) {
       var s = st();
@@ -250,11 +171,6 @@
       var out;
       try { out = orig.apply(this, arguments); }
       finally { if (restore) restore[0].length = restore[1]; }
-      if (EYE_GUARD.trim && strand && strand.mannequin && active()) {
-        EYE_GUARD.stats.seen++;
-        out = eyeBoxTrim(out, geom());
-        if (strand.sec === 'front' && EYE_GUARD.frontCapToSide) out = frontSideCap(out);
-      }
       return out;
     };
   });
@@ -305,24 +221,60 @@
       }
       applyCommonDefaults(id);
       EYE_GUARD._applying = id;
-      EYE_GUARD.stats.trimmed = 0;
-      EYE_GUARD.stats.seen = 0;
-      EYE_GUARD.stats.capped = 0;
       _geo = null;
+      FACE_COVER_CHECK.pendingId = id;
       try { return orig.apply(this, arguments); }
-      finally {
-        var tgt = frontTarget(), hadTarget = tgt != null, psTip = profileSetsTip();
-        EYE_GUARD._applying = null;
-        if (EYE_GUARD.on) {
-          console.log(TAG + ' ' + id + (!hadTarget ? ' — 앞머리 목표 없음(제한 없음)' :
-            ' — 앞머리 목표 tipAt ' + tgt + '(한계 +' + EYE_GUARD.frontMargin + ')' + (psTip ? ' · 심는 끝은 프로필 값' : '') +
-            ' · 바닥 ' + EYE_GUARD.lineFloorFaceFrac + ' · 역산 중 눈 상자에서 자른 가닥 ' +
-            EYE_GUARD.stats.trimmed + '/' + EYE_GUARD.stats.seen +
-            ' · 옆선 상한으로 자른 front 가닥 ' + (EYE_GUARD.stats.capped || 0)));
-        }
-      }
+      finally { EYE_GUARD._applying = null; }
     };
   });
+
+  // ── 얼굴 가림 검사: FACE_COVER_CHECK (자르지 않고 세기만) ──
+  // 최종 조정 가닥(computeAdjustedHair3DStrands 결과)이 얼굴 상자에 들어가면
+  // 섹션별로 세서 알려줍니다. 고치는 건 스펙(길이·커트·가르마·넘김)에서.
+  var FACE_COVER_CHECK = W.FACE_COVER_CHECK = Object.assign({
+    on: true,
+    warnFrac: 0.01,    // 섹션 가닥의 1% 넘게 들어가면 경고
+    last: null,
+    pendingId: null
+  }, W.FACE_COVER_CHECK || {});
+
+  wrap('computeAdjustedHair3DStrands', function (orig) {
+    return function () {
+      var out = orig.apply(this, arguments);
+      if (!FACE_COVER_CHECK.on || !FACE_COVER_CHECK.pendingId || !out || !out.length) return out;
+      var id = FACE_COVER_CHECK.pendingId;
+      FACE_COVER_CHECK.pendingId = null;          // 스타일 적용 후 첫 최종 결과에서 한 번만
+      try {
+        var g = geom();
+        if (!g) return out;
+        var by = {}, n = {};
+        for (var i = 0; i < out.length; i++) {
+          var sgm = out[i], sec = sgm.sec || '?';
+          n[sec] = (n[sec] || 0) + 1;
+          if (coversFace(sgm.pts, g)) by[sec] = (by[sec] || 0) + 1;
+        }
+        var bad = [];
+        for (var k in by) if (by[k] / n[k] > FACE_COVER_CHECK.warnFrac) bad.push(k + ' ' + by[k] + '/' + n[k]);
+        FACE_COVER_CHECK.last = { id: id, by: by, n: n, bad: bad, at: Date.now() };
+        if (bad.length) console.warn('[얼굴 가림] ' + id + ' — 얼굴을 덮는 섹션: ' + bad.join(' · ') +
+          '\n    → 자르지 않았습니다. 이 스타일 스펙에서 해당 섹션의 tipAt을 줄이거나(짧게),' +
+          ' 가르마(partAmt)·넘김(sweep)·curlDir·overdirection으로 얼굴 밖으로 보내세요.');
+        else console.log('[얼굴 가림] ' + id + ' — 얼굴 가림 없음');
+      } catch (e) { console.warn('[얼굴 가림] 검사 실패', e); }
+      return out;
+    };
+  });
+
+  var _ppl = W.perfPanelLines;
+  if (typeof _ppl === 'function') {
+    W.perfPanelLines = function () {
+      var lines = _ppl.apply(this, arguments) || [];
+      var L = FACE_COVER_CHECK.last;
+      lines.push(!L ? '[얼굴 가림] 아직 검사 안 함(스타일 적용 후 표시)' :
+        '[얼굴 가림] ' + L.id + ' — ' + (L.bad.length ? '⚠ ' + L.bad.join(' · ') + ' (스펙에서 길이/시술로 수정)' : '없음'));
+      return lines;
+    };
+  }
 
   // ── (2) Men's Hippie Perm 재조정 ──
   var HIPPIE = 'hippie_curl_men';
@@ -516,7 +468,6 @@
     return k;
   };
 
-  console.log(TAG + ' 설치 — 앞머리 기본 끝 ' + EYE_GUARD.defaultTipFaceFrac + ' · 바닥 ' +
-    EYE_GUARD.lineFloorFaceFrac + ' · 한계선 = 스타일 tipAt.front + ' + EYE_GUARD.frontMargin +
-    ' · 스타일별 끄기 spec.eyeGuard=false · 전체 끄기 EYE_GUARD.on=false');
+  console.log(TAG + ' 설치 — 앞머리 기본 끝 ' + EYE_GUARD.defaultTipFaceFrac +
+    ' · 가닥 자르기 없음(얼굴 가림은 FACE_COVER_CHECK가 검사만 함)');
 })();
