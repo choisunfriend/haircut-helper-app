@@ -20,7 +20,7 @@
   // 섹션 공통 기본값(Blowout Waves와 같은 계열)
   function sec(cut, extra) {
     return Object.assign(
-      { base: 25, define: 85, volShare: 55, volPoint: 70, weight: 30, curlLen: 14 },
+      { base: 25, define: 55, volShare: 55, volPoint: 70, weight: 30, curlLen: 14 },
       extra || {},
       cut
     );
@@ -44,17 +44,17 @@
       occipital: sec({ technique: 'uniform', elevation: 45, texture: 40, curlDir: 20 }, { volShare: 60 }),
       nape:      sec({ technique: 'uniform', elevation: 25, texture: 35, line: 40, curlDir: 20 })
     },
-    perm: { curl: 0, wave: 0 },            // 컬·웨이브 모두 풂 (스트레이트)
+    perm: { curl: 32, wave: 92 },          // 굵은 컬 · 넓은 웨이브 (원래 값)
     styling: {
       sweep: 18,      // 앞머리를 뒤·옆으로 넘겨 얼굴을 열어 둠
       volume: 58,     // 뿌리 볼륨(벨크로 롤)
       flow: 35,       // 끝은 바깥으로
       part: 0,        // 가운데 가르마
       partAmt: 88,    // 가르마를 또렷하게 → 커튼뱅이 양옆으로 갈라짐
-      finish: 80,
+      finish: 55,
       sleek: 15
     },
-    globalCurl: 0,
+    globalCurl: 32,
     color: '#5A4030'
   };
 
@@ -64,7 +64,7 @@
     name: 'Long Layers + Curtain Bangs',
     tags: 'Center part · Cheekbone curtain bangs · Sleek coated straight',
     length: 95,
-    curl: 0,
+    curl: 32,
     volume: 58,
     colorHex: '#5A4030'
   });
@@ -78,17 +78,17 @@
     W.STYLE_BASE.addProfile(ID, {
       label: 'Long layers · Curtain bangs',
       config: {
-        CURL_BUNDLE: { rodThickCm: 5, pitchThick: 1.9, relax: 1.2, microAmp: 0, microPhase: 0.15 },
+        CURL_BUNDLE: { rodThickCm: 5, pitchThick: 1.9, relax: 1.2, microAmp: 0.015, microPhase: 0.15 },
         CURL3D_FIX: { ampGamma: 0.72 },
         VOLUME3D: { AMP: 0.17 },
         MQ_FRINGE: { on: true, tipFaceFrac: 0.4, lineHalfX: 1.1, lineGain: 1, crownAllAround: false },
         HAIR_DYE: { sMax: 1.25, highlightK: 1.0, glossDesat: 0.5 }
       },
       volBase: 1,
-      after: { front: { curl: 0 }, temple: { curl: 0 } },
+      // 조정 화면에서 섹션 컬 슬라이더를 0으로 둔 것과 같은 상태
+      after: { crown: { curl: 0 }, front: { curl: 0 }, temple: { curl: 0 }, side: { curl: 0 }, occipital: { curl: 0 }, nape: { curl: 0 } },
       // 광택: 결 하이라이트를 세게(spec)·넓게(specPow↓) → 찰랑이는 광택 띠
       shade: { ao: 0.55, lumCap: 1.4, spec: 0.62, specPow: 28 },
-      // 36-gloss-wave.js: 코팅 마감 — 색을 가닥 따라 고르게(0.9) + 강한 결 하이라이트(shade)
       // 코팅만: 가닥 모양은 엔진 그대로(컬 0 = 슬라이더 컬 0과 같음), 색을 가닥 따라 고르게
       gloss: { shape: false, colorSmooth: 0.9, colorWin: 6 }
     });
