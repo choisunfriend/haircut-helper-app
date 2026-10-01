@@ -89,8 +89,8 @@
       // 광택: 결 하이라이트를 세게(spec)·넓게(specPow↓) → 찰랑이는 광택 띠
       shade: { ao: 0.55, lumCap: 1.4, spec: 0.62, specPow: 28 },
       // 36-gloss-wave.js: 코팅 마감 — 색을 가닥 따라 고르게(0.9) + 강한 결 하이라이트(shade)
-      // 컬 풀기: 8cm보다 짧은 굴곡(컬·웨이브·잔결) 전부 제거 → 큰 흐름만 남김
-      gloss: { fineCm: 1.6, flowCm: 8, waveBoost: -1, rootCm: 1.5, colorSmooth: 0.9, colorWin: 6 }
+      // 코팅만: 가닥 모양은 엔진 그대로(컬 0 = 슬라이더 컬 0과 같음), 색을 가닥 따라 고르게
+      gloss: { shape: false, colorSmooth: 0.9, colorWin: 6 }
     });
   }
 

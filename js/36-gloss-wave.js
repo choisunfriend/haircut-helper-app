@@ -29,13 +29,16 @@
   G.on = true;
   // 기본값 — 프로필의 gloss 객체가 덮어씀
   G.defaults = {
+    shape: true,      // false면 가닥 모양은 안 건드리고 코팅(색·광택)만
     fineCm: 1.2,      // 이보다 짧은 파장의 굴곡(잔결)은 지움
     flowCm: 3.2,      // 이보다 긴 흐름은 그대로 둠
     waveBoost: 0.3,   // 그 사이(웨이브) 진폭을 이만큼 키움
     rootCm: 2.0,      // 뿌리에서 이 길이까지는 원래 모양 → 점점 매끈
     keepLen: false,   // true면 마디 길이 보존(잔결 길이가 남아 다시 꼬일 수 있음)
     colorSmooth: 0.7, // 가닥 색 고르게 (0=원본, 1=완전 평균)
-    colorWin: 4       // 색 평균 창(점 개수, 한쪽)
+    colorWin: 4,      // 색 평균 창(점 개수, 한쪽)
+    maxMoveCm: 1.2,   // 한 점이 움직일 수 있는 최대 거리(컬 진폭만 지우고 큰 형태는 못 바꾸게)
+    skullPad: 1.06    // 두상 타원체 ×이 값 안으로 들어간 점은 껍질 위로 되밀기
   };
   G.set = function (o) { Object.assign(G.defaults, o || {}); bump(); };
 
@@ -79,6 +82,15 @@
     return out;
   }
 
+  // 매끈하게 하면서 두상 안으로 파고든 점 → 타원체 껍질 위로(충돌 처리가 튕겨내 머리가 폭발하던 원인 차단)
+  function pushOut(q, E, cy, pad) {
+    if (!E || !(E.a > 0)) return;
+    var ux = q.x / (E.a * pad), uy = (q.y - cy) / (E.b * pad), uz = q.z / (E.c * pad);
+    var r = Math.sqrt(ux * ux + uy * uy + uz * uz);
+    if (r >= 1 || r < 1e-6) return;
+    q.x /= r; q.y = cy + (q.y - cy) / r; q.z /= r;
+  }
+
   function smoothPts(pts, cfg, cpu, st) {
     var n = pts.length;
     if (n < 5) return pts;
@@ -91,7 +103,9 @@
     for (var a2 = 0; a2 < n; a2++) P2[a2] = { x: A[a2 * 3], y: A[a2 * 3 + 1], z: A[a2 * 3 + 2] };
     A = gauss(P2, arcLen(P2), sf, new Float64Array(n * 3));
     var B = gauss(pts, s, sl, new Float64Array(n * 3));
-    var k = 1 + cfg.waveBoost, root = cfg.rootCm / cpu;
+    var k = 1 + cfg.waveBoost, root = cfg.rootCm / cpu, maxMove = (cfg.maxMoveCm || 1e9) / cpu;
+    var E = null, cy = 0;
+    try { E = getHeadEllipsoid(); cy = typeof SCALP_CENTER_Y !== 'undefined' ? SCALP_CENTER_Y : 0.15; } catch (e) { E = null; }
     var out = new Array(n);
     var dev = 0;
     for (var i = 0; i < n; i++) {
@@ -102,7 +116,10 @@
           z = B[i * 3 + 2] + (A[i * 3 + 2] - B[i * 3 + 2]) * k;
       var p = pts[i];
       var q = Object.assign({}, p);
-      q.x = p.x + (x - p.x) * t; q.y = p.y + (y - p.y) * t; q.z = p.z + (z - p.z) * t;
+      var mx = (x - p.x) * t, my = (y - p.y) * t, mz = (z - p.z) * t, md = Math.hypot(mx, my, mz);
+      if (md > maxMove) { var f = maxMove / md; mx *= f; my *= f; mz *= f; }
+      q.x = p.x + mx; q.y = p.y + my; q.z = p.z + mz;
+      if (E) pushOut(q, E, cy, cfg.skullPad);
       dev += Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z);
       out[i] = q;
     }
@@ -182,7 +199,7 @@
         if (!sd || !sd.pts || sd.pts.length < 5) { out[i] = sd; continue; }
         var c = Object.assign({}, sd);
         try {
-          c.pts = smoothPts(sd.pts, cfg, cpu, st);
+          if (cfg.shape !== false) c.pts = smoothPts(sd.pts, cfg, cpu, st);
           if (sd.colors) c.colors = smoothColors(sd.colors, cfg);
         } catch (e) { c = sd; }
         out[i] = c;
@@ -190,7 +207,7 @@
       memo.set(res, { key: key, out: out });
       if (!G._logged || G._logged !== key) {
         G._logged = key;
-        console.log(TAG + ' 가닥 ' + st.n + '개 ' + (cfg.waveBoost <= -1 ? '컬 풂·코팅' : '매끈하게') + ' — 잔결(<' + cfg.fineCm + 'cm) 제거 · 웨이브(' + cfg.fineCm + '~' + cfg.flowCm +
+        console.log(TAG + (cfg.shape === false ? ' 코팅만(모양 그대로) · 가닥 ' + res.length + '개 · 끄기 GLOSS_WAVE.on=false' : ' 가닥 ' + st.n + '개 매끈하게') + ' — 잔결(<' + cfg.fineCm + 'cm) 제거 · 웨이브(' + cfg.fineCm + '~' + cfg.flowCm +
           'cm) ×' + (1 + cfg.waveBoost).toFixed(2) + ' · 평균 이동 ' + (st.dev / Math.max(1, st.n)).toFixed(2) + 'cm · ' +
           Math.round(performance.now() - t0) + 'ms · 끄기 GLOSS_WAVE.on=false');
       }
