@@ -20,7 +20,7 @@
   // 섹션 공통 기본값(Blowout Waves와 같은 계열)
   function sec(cut, extra) {
     return Object.assign(
-      { base: 25, define: 55, volShare: 55, volPoint: 70, weight: 30, curlLen: 14 },
+      { base: 25, define: 85, volShare: 55, volPoint: 70, weight: 30, curlLen: 14 },
       extra || {},
       cut
     );
@@ -51,7 +51,7 @@
       flow: 35,       // 끝은 바깥으로
       part: 0,        // 가운데 가르마
       partAmt: 88,    // 가르마를 또렷하게 → 커튼뱅이 양옆으로 갈라짐
-      finish: 55,
+      finish: 80,
       sleek: 15
     },
     globalCurl: 32,
@@ -78,15 +78,18 @@
     W.STYLE_BASE.addProfile(ID, {
       label: 'Long layers · Curtain bangs',
       config: {
-        CURL_BUNDLE: { rodThickCm: 5, pitchThick: 1.9, relax: 1.2, microAmp: 0.015, microPhase: 0.15 },
+        CURL_BUNDLE: { rodThickCm: 5, pitchThick: 1.9, relax: 1.2, microAmp: 0, microPhase: 0.15 },
         CURL3D_FIX: { ampGamma: 0.72 },
         VOLUME3D: { AMP: 0.17 },
         MQ_FRINGE: { on: true, tipFaceFrac: 0.4, lineHalfX: 1.1, lineGain: 1, crownAllAround: false },
-        HAIR_DYE: { sMax: 1.25, highlightK: 0.7, glossDesat: 0.7 }
+        HAIR_DYE: { sMax: 1.25, highlightK: 0.85, glossDesat: 0.6 }
       },
       volBase: 1,
       after: { front: { curl: 12 }, temple: { curl: 16 } },
-      shade: { ao: 0.42, lumCap: 1.3, spec: 0.24, specPow: 60 }
+      // 광택: 결 하이라이트를 세게(spec)·넓게(specPow↓) → 찰랑이는 광택 띠
+      shade: { ao: 0.5, lumCap: 1.35, spec: 0.45, specPow: 34 },
+      // 36-gloss-wave.js: 잔결 제거 · 굵은 웨이브 살림 · 색 고르게
+      gloss: { fineCm: 1.2, flowCm: 3.2, waveBoost: 0.3, rootCm: 2, colorSmooth: 0.7 }
     });
   }
 
