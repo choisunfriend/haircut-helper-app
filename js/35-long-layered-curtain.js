@@ -62,7 +62,7 @@
     id: ID,
     specId: ID,
     name: 'Long Layers + Curtain Bangs',
-    tags: 'Center part · Cheekbone curtain bangs · Sleek coated straight',
+    tags: 'Center part · Cheekbone curtain bangs · Sleek coated big waves',
     length: 95,
     curl: 32,
     volume: 58,
@@ -78,18 +78,33 @@
     W.STYLE_BASE.addProfile(ID, {
       label: 'Long layers · Curtain bangs',
       config: {
-        CURL_BUNDLE: { rodThickCm: 5, pitchThick: 1.9, relax: 1.2, microAmp: 0.015, microPhase: 0.15 },
+        // 레퍼런스 과정: 고데기(굵은 봉)로 중간부터 감고 → 손·브러시로 풀어 굵은 S웨이브
+        //   rootLeaveCm 8 : 뿌리~귀 위는 감지 않음(벨크로 롤로 볼륨만, 웨이브는 중간부터)
+        //   pitchThick 3.0 : 웨이브 한 굽이를 길게(촘촘한 컬 X)
+        //   relax 1.5      : 브러시아웃으로 풀어진 컬
+        //   phaseJitter 0.25 · clumpPull 0.65 : 한 다발이 같이 웨이브(가닥마다 따로 꼬이면 부스스)
+        //   microAmp 0     : 잔꼬임 없음(코팅 마감)
+        CURL_BUNDLE: { rodThickCm: 5, pitchThick: 3.0, relax: 1.5, microAmp: 0, microPhase: 0.15,
+                       rootLeaveCm: 8, windCm: 30, phaseJitter: 0.25, clumpPull: 0.65 },
         CURL3D_FIX: { ampGamma: 0.72 },
         VOLUME3D: { AMP: 0.17 },
         MQ_FRINGE: { on: true, tipFaceFrac: 0.4, lineHalfX: 1.1, lineGain: 1, crownAllAround: false },
         HAIR_DYE: { sMax: 1.25, highlightK: 1.0, glossDesat: 0.5 }
       },
       volBase: 1,
-      // 조정 화면에서 섹션 컬 슬라이더를 0으로 둔 것과 같은 상태
-      after: { crown: { curl: 0 }, front: { curl: 0 }, temple: { curl: 0 }, side: { curl: 0 }, occipital: { curl: 0 }, nape: { curl: 0 } },
+      // 섹션 컬 슬라이더: 길고 아래쪽일수록 웨이브 크게, 앞머리는 얼굴 밖으로 살짝만
+      //   curlLen = 끝에서부터 감는 길이(cm) — 고데기를 턱 높이부터 댄 것과 같음
+      after: {
+        crown:     { curl: 20, curlLen: 18 },
+        front:     { curl: 15, curlLen: 8 },
+        temple:    { curl: 30, curlLen: 14 },
+        side:      { curl: 42, curlLen: 24 },
+        occipital: { curl: 42, curlLen: 24 },
+        nape:      { curl: 40, curlLen: 24 }
+      },
       // 광택: 결 하이라이트를 세게(spec)·넓게(specPow↓) → 찰랑이는 광택 띠
       shade: { ao: 0.55, lumCap: 1.4, spec: 0.62, specPow: 28 },
-      // 코팅만: 가닥 모양은 엔진 그대로(컬 0 = 슬라이더 컬 0과 같음), 색을 가닥 따라 고르게
+      // 코팅만: 가닥 모양은 엔진 그대로(웨이브는 위 섹션 컬 슬라이더로), 색을 가닥 따라 고르게
       gloss: { shape: false, colorSmooth: 0.9, colorWin: 6 }
     });
   }
