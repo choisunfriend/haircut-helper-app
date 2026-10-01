@@ -189,6 +189,9 @@
       var res = orig.apply(this, arguments);
       var cfg = activeCfg();
       if (!cfg || !Array.isArray(res) || !res.length) return res;
+      // 모양 필터가 꺼져 있으면(코팅만) 복사본을 만들지 않는다 — 색 고르기는 bakeStrandColors3D 한 곳에서만.
+      // (예전엔 여기서 가닥 전체 색 배열을 한 벌 더 들고 있어 폰 메모리를 먹었음)
+      if (cfg.shape === false) return res;
       var key = JSON.stringify(cfg) + '|' + ver;
       var hit = memo.get(res);
       if (hit && hit.key === key) return hit.out;
