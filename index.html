@@ -139,7 +139,7 @@
       </div>
       <div style="display:flex;gap:8px;padding:10px 14px 14px;flex-shrink:0;">
         <button class="btn btn-ghost" style="flex:1;font-size:13px;" onclick="navTo('style')">← 스타일</button>
-        <button class="btn btn-primary" style="flex:2;font-size:13px;" onclick="navTo('model3d')">3D로 보기 →</button>
+        <button class="btn btn-primary" style="flex:2;font-size:13px;" onclick="navTo('result')">결과 보기 →</button>
       </div>
     </section>
     <section class="screen" id="screen-result">
@@ -187,7 +187,7 @@
         <div class="model3d-hint" style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--text-muted);background:rgba(0,0,0,0.4);padding:4px 10px;border-radius:10px;">드래그 회전 · 두 손가락(Shift+드래그) 이동 · 핀치(휠) 확대</div>
       </div>
       <div style="display:flex;gap:8px;padding:10px 14px 14px;flex-shrink:0;">
-        <button class="btn btn-ghost" style="flex:1;font-size:13px;" onclick="navTo('adjust')">← 조정</button>
+        <button class="btn btn-ghost" style="flex:1;font-size:13px;" onclick="navTo('result')">← 결과</button>
         <button class="btn btn-primary" style="flex:2;font-size:13px;" onclick="startNewCustomer()">새로 시작</button>
       </div>
     </section>
@@ -196,6 +196,7 @@
     <button class="nav-tab active" id="nav-capture" onclick="navTo('capture')"><span class="icon">📷</span>촬영</button>
     <button class="nav-tab" id="nav-style" onclick="navTo('style')" disabled><span class="icon">✂️</span>스타일</button>
     <button class="nav-tab" id="nav-adjust" onclick="navTo('adjust')" disabled><span class="icon">🎚️</span>조정</button>
+    <button class="nav-tab" id="nav-result" onclick="navTo('result')" disabled><span class="icon">🧥</span>결과</button>
     <button class="nav-tab" id="nav-model3d" onclick="navTo('model3d')" disabled><span class="icon">🧑</span>3D</button>
   </nav>
 </div>
@@ -214,16 +215,15 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
 <script>let __visionModulePromise=null;function loadVisionModule(){return!__visionModulePromise&&(__visionModulePromise=import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9')),__visionModulePromise;}</script>
 <script src="js/01-face-landmarker.js?v=20260922e"></script>
-<script src="js/02-state-sections.js?v=20260930a"></script>
+<script src="js/02-state-sections.js?v=20260922e"></script>
 <script src="js/03a-hair-mask.js?v=20260922e"></script>
 <script src="js/03b-mask-memory.js?v=20260922e"></script>
 <script src="js/04-structure-tensor.js?v=20260922e"></script>
 <script src="js/05-capture-nav.js?v=20260922e"></script>
-<script src="js/06-ui-panels.js?v=20260930a"></script>
+<script src="js/06-ui-panels.js?v=20260922e"></script>
 <script src="js/07a-render-canvas.js?v=20260922e"></script>
 <script src="js/07b-render-compare.js?v=20260922e"></script>
-<script src="js/08-cut-engine.js?v=20260930a"></script>
-<script>window['STYLEPEEK_WASM_V']='20260928e';</script>
+<script src="js/08-cut-engine.js?v=20260922e"></script>
 <script src="js/09-strand-dye.js?v=20260922e"></script>
 <script src="js/10-hair-render-2d.js?v=20260922e"></script>
 <script src="js/11-result-screen.js?v=20260922e"></script>
@@ -235,27 +235,21 @@
 <script src="js/14-hair-3d-ops.js?v=20260922e"></script>
 <script src="js/15-project-3d.js?v=20260922e"></script>
 <script src="js/21-braid.js?v=20260922e"></script>
-<script src="js/16-style-spec-diag.js?v=20260930a"></script>
-<script src="js/17a-mannequin.js?v=20260930d"></script>
+<script src="js/16-style-spec-diag.js?v=20260922e"></script>
+<script src="js/17a-mannequin.js?v=20260922e"></script>
 <script src="js/17b-cut3d-piece.js?v=20260922e"></script>
 <script src="js/14c-curl-bundle.js?v=20260922e"></script>
 <script src="js/18-perf-i18n-boot.js?v=20260922e"></script>
 <script src="js/19-stage-backdrop.js?v=20260922e"></script>
 <script src="js/20-outfit-match.js?v=20260922e"></script>
 <script src="js/22-ui-i18n-extra.js?v=20260922e"></script>
-<script src="js/23-section-all.js?v=20260930a"></script>
-<script src="js/24-style-base.js?v=20260930a"></script>
+<script src="js/23-section-all.js?v=20260922e"></script>
+<script src="js/24-style-base.js?v=20260927h"></script>
 <script src="js/25-treatment-spec.js?v=20260922e"></script>
 <script src="js/26-hair-clump.js?v=20260922e"></script>
 <script src="js/27-perf-tune.js?v=20260927a"></script>
-<script src="js/28-perf-probe.js?v=20260929z"></script>
+<script src="js/28-perf-probe.js?v=20260927h"></script>
 <script src="js/29-hairpin-3d.js?v=20260927d"></script>
 <script src="js/30-saved-photos.js?v=20260927b"></script>
-<script src="js/31-hippie-wave-eyeguard.js?v=20261001a"></script>
-<script src="js/32-braid-drape.js?v=20260930a"></script>
-<script src="js/33-cut-from-tip.js?v=20260930b"></script>
-<script src="js/34-skip-result.js?v=20261001a"></script>
-<script src="js/35-long-layered-curtain.js?v=20261002b"></script>
-<script src="js/36-gloss-wave.js?v=20261002a"></script>
 </body>
 </html>
