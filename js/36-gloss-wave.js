@@ -219,21 +219,12 @@
   });
 
   // 촬영 사진에서 다시 굽는 색(재투영)도 가닥을 따라 고르게
-  // 원본 색 배열(28번 bakeMemo가 같은 배열을 돌려줌) → 고른 배열을 WeakMap에 기억.
-  // 예전엔 3D를 만들 때마다 3만 가닥 색 배열을 새로 만들어 메모리·시간을 먹었음.
-  var colMemo = new WeakMap();
   wrap('bakeStrandColors3D', function (orig) {
     return function () {
       var r = orig.apply(this, arguments);
       var cfg = activeCfg();
       if (!cfg || !Array.isArray(r)) return r;
-      var key = cfg.colorSmooth + '|' + cfg.colorWin;
-      var hit = colMemo.get(r);
-      if (hit && hit.k === key) return hit.v;
-      var v;
-      try { v = smoothColors(r, cfg); } catch (e) { v = r; }
-      colMemo.set(r, { k: key, v: v });
-      return v;
+      try { return smoothColors(r, cfg); } catch (e) { return r; }
     };
   });
 
