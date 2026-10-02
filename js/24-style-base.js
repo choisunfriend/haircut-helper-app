@@ -38,7 +38,7 @@
    *  true  = 모든 스타일에서 고침(다른 스타일도 볼륨이 커집니다 — 확인 후 켜세요) */
   SB.fixVolHashAll = true;   // 막대만으로 모양을 만들려면 모든 스타일에서 고쳐져 있어야 합니다
   SB.PARAM_KEYS = ['length', 'elevation', 'texture', 'density', 'overdirection', 'line', 'curl', 'wave', 'curlDir',
-    'base', 'define', 'volShare', 'volPoint', 'weight', 'curlLen'];
+    'base', 'define', 'volShare', 'volPoint', 'weight'];
 
   /* 스타일별 엔진 프로필 — 키는 STYLE_SPECS 의 id (또는 커스텀 스타일의 profileId) */
   SB.profiles = {
@@ -256,7 +256,7 @@
     var yEnd = measureSectionTipY(sec, SB.LEN_EXT);
     if (yEnd == null) return null;
     var lo = 0, hi = SB.LEN_EXT;
-    for (var i = 0; i < 9; i++) {   // 200/2^9 < 0.5 — 정수 올림이라 이걸로 충분 (예전 16)
+    for (var i = 0; i < 16; i++) {
       var mid = (lo + hi) / 2, y = measureSectionTipY(sec, mid);
       if (y == null) return null;
       if (Math.abs(y - yEnd) <= eps) hi = mid; else lo = mid;
@@ -284,7 +284,7 @@
         best = sat;                                   // 끝까지 가도 목표에 못 닿음 → 닿을 수 있는 최대
       } else {
         var lo = 0, hi = sat;                         // 포화점 안쪽에서 목표를 찾음
-        for (var i = 0; i < 9; i++) {   // 예전 18 — 결과를 정수로 반올림하므로 9회면 같은 답
+        for (var i = 0; i < 18; i++) {
           var mid = (lo + hi) / 2, y = measureSectionTipY(sec, mid);
           if (y == null) break;
           if (y > target) lo = mid; else hi = mid;
@@ -364,8 +364,7 @@
    * ---------------------------------------------------------------------- */
   var NEW_PARAMS = {
     perm: [
-      { key: 'base', label: '베이스 폭', hint: '로드 하나에 감는 모발 폭 · 넓을수록 컬 덩어리가 큼', min: 0, max: 100, unit: '%' },
-      { key: 'curlLen', label: '컬 구간', hint: '모발 끝에서부터 말리는 길이 · 짧으면 끝만(블로우아웃) · 60=뿌리까지', min: 3, max: 60, unit: 'cm' }
+      { key: 'base', label: '베이스 폭', hint: '로드 하나에 감는 모발 폭 · 넓을수록 컬 덩어리가 큼', min: 0, max: 100, unit: '%' }
     ],
     set: [
       { key: 'define',   label: '컬 정리감', hint: '컬크림·에센스로 결을 모은 정도 · 낮으면 부스스', min: 0, max: 100, unit: '%' },
@@ -375,7 +374,7 @@
     ]
   };
   // 예전 엔진값과 같은 결과가 나오는 기본 숫자
-  var NEW_DEFAULTS = { base: 55, define: 30, volShare: 50, volPoint: 50, weight: 50, curlLen: 20 };   // curlLen 20 = 엔진 기본 windCm
+  var NEW_DEFAULTS = { base: 55, define: 30, volShare: 50, volPoint: 50, weight: 50 };
   var VOL_SECK0 = null;   // 섹션별 예전 부피 배수(VOLUME3D.secK)
 
   function secVal(sec, key) {
@@ -415,7 +414,6 @@
     try {
       if (typeof GY_ALL_PARAMS !== 'undefined') {
         if (GY_ALL_PARAMS.perm.indexOf('base') < 0) GY_ALL_PARAMS.perm.push('base');
-        if (GY_ALL_PARAMS.perm.indexOf('curlLen') < 0) GY_ALL_PARAMS.perm.push('curlLen');
         GY_ALL_PARAMS.set = NEW_PARAMS.set.map(function (p) { return p.key; });
       }
     } catch (e) {}
@@ -441,8 +439,7 @@
         '부피감': 'Lift', '이 섹션이 두상에서 뜨는 정도': 'How far this section stands off the head',
         '볼륨 위치': 'Volume point', '뿌리 ↔ 모발 끝 · 끝쪽일수록 밑단이 퍼짐': 'Root ↔ ends · toward ends = flared hem',
         '처짐': 'Weight', '모발 무게로 내려앉는 정도 · 낮을수록 컬이 뜸': 'How much the hair drops under its weight',
-        '앞머리 기장': 'Fringe length', '눈썹 위 ↔ 눈 아래': 'Above brows ↔ below eyes',
-        '컬 구간': 'Curl zone', '모발 끝에서부터 말리는 길이 · 짧으면 끝만(블로우아웃) · 60=뿌리까지': 'How far up from the ends the curl reaches · short = ends only (blowout) · 60 = from roots'
+        '앞머리 기장': 'Fringe length', '눈썹 위 ↔ 눈 아래': 'Above brows ↔ below eyes'
       });
     } catch (e) {}
     try { VOL_SECK0 = clone((CFG.VOLUME3D() || {}).secK) || null; } catch (e) {}
@@ -491,65 +488,21 @@
     });
 
     // 섹션을 아는 곳(adjustStrandGeom)에서 지금 섹션을 기억 → 섹션을 모르는 계산들이 막대 값을 씀
-    var CUR_SEC = null, CUR_STRAND = null, CUR_LEN = null;
+    var CUR_SEC = null;
     wrap('adjustStrandGeom', function (f) {
-      return function (strand, len) {
-        var prev = CUR_SEC, ps = CUR_STRAND, pl = CUR_LEN;
-        CUR_SEC = strand && strand.sec || null; CUR_STRAND = strand || null; CUR_LEN = (typeof len === 'number') ? len : null;
-        try { return f.apply(this, arguments); } finally { CUR_SEC = prev; CUR_STRAND = ps; CUR_LEN = pl; }
+      return function (strand) {
+        var prev = CUR_SEC; CUR_SEC = strand && strand.sec || null;
+        try { return f.apply(this, arguments); } finally { CUR_SEC = prev; }
       };
     });
-    /* 자르기 = 끝의 컬도 같이 잘려 나감
-     * 컬은 "끝에서 windCm 만큼" 감기므로, 길이를 줄이면 컬 구간이 뿌리 쪽으로 따라 올라가
-     * 머리가 두피 속으로 빨려 들어가는 것처럼 보였습니다. 스타일 기준 길이보다 짧게 자른 만큼(cm)
-     * 감기는 길이를 줄이고, 다 잘려 나가면 곧게 둡니다. 스타일을 걸 때(기준 저장 전)는 적용하지 않음. */
-    SB.cutRemovesCurl = true;
-    function cutCm() {
-      var S = st(), base = S && S._styleBase && S._styleBase[CUR_SEC];
-      if (!SB.cutRemovesCurl || !base || base.length == null || !CUR_STRAND || !CUR_STRAND.pts) return 0;
-      var now = CUR_LEN != null ? CUR_LEN : (S.sections[CUR_SEC] && S.sections[CUR_SEC].length);
-      if (!(now < base.length) || typeof sectionLengthRatio !== 'function') return 0;
-      var rb = sectionLengthRatio(CUR_SEC, base.length), rn = sectionLengthRatio(CUR_SEC, now);
-      if (!(rn < rb)) return 0;
-      var cm = (typeof modelCmPerUnit === 'function' && modelCmPerUnit()) || 0;
-      if (!cm || typeof arcLength3D !== 'function') return 0;
-      return arcLength3D(CUR_STRAND.pts) * cm * (rb - rn);
-    }
     SB._asSec = function (sec, fn) { var p = CUR_SEC; CUR_SEC = sec; try { return fn(); } finally { CUR_SEC = p; } };  // 점검용
-    /* 가르마는 앞이마~정수리까지만 — 뒤통수로 넘어가지 않게
-     * 재 보니 가르마 미는 힘이 정수리(고도 88°)에서 최대인 채로 뒤쪽으로 이어져, 뒤 가운데 고도 80°에서
-     * 0.048 · 70°에서 0.019(앞이마 0.061)가 남아 있었습니다 → 뒷머리 가운데가 좌우로 갈라져 두피가 한 줄로 보임.
-     * (Seams 색칠로 확인: 갈라진 줄은 사진 경계가 아니라 후면 사진 한가운데였음)
-     * 뿌리의 앞뒤 위치(z/c)로 약하게 합니다: 정수리보다 조금 앞(+0.15c)까지 100%, 정수리 뒤 -0.15c에서 0. */
-    SB.partFrontOnly = true;
-    wrap('partingPushHead', function (f) {
-      return function (root) {
-        var v = f.apply(this, arguments);
-        if (!v || !SB.partFrontOnly || !root) return v;
-        var c = 1; try { c = getHeadEllipsoid().c || 1; } catch (e) {}
-        var zn = root.z / c, lo = -0.15, hi = 0.15;
-        var t = Math.max(0, Math.min(1, (zn - lo) / (hi - lo))), w = t * t * (3 - 2 * t);
-        if (w >= 1) return v;
-        if (w <= 0) return null;
-        return { x: v.x * w, y: v.y * w, z: v.z * w };
-      };
-    });
     // 펌 · 베이스 폭 / 세팅 · 컬 정리감
     wrap('curlStrand3D', function (f) {
       return function () {
         if (!SB.on || !CUR_SEC || !G.CURL_BUNDLE) return f.apply(this, arguments);
         var self = this, args = arguments, b = secVal(CUR_SEC, 'base'), d = secVal(CUR_SEC, 'define');
-        var tmp = { rodK: SB.map.rodK(b), clumpPull: SB.map.clumpPull(d), phaseJitter: SB.map.phaseJitter(d) };
-        // 컬 구간 막대: 기본 20cm(=엔진 기본)이면 손대지 않음 → 기존 스타일·프리셋 그대로
-        var cl = secVal(CUR_SEC, 'curlLen'), wind = G.CURL_BUNDLE.windCm;
-        if (cl !== NEW_DEFAULTS.curlLen) { wind = cl >= 60 ? 99 : cl; tmp.windCm = wind; }
-        var cut = cutCm();
-        if (cut > 0) {
-          var w = wind - cut;
-          if (w <= 0.5) return args[0];          // 컬 구간이 다 잘려 나감 → 곧은 머리
-          tmp.windCm = w;
-        }
-        return withTemp(G.CURL_BUNDLE, tmp, function () { return f.apply(self, args); });
+        return withTemp(G.CURL_BUNDLE, { rodK: SB.map.rodK(b), clumpPull: SB.map.clumpPull(d), phaseJitter: SB.map.phaseJitter(d) },
+          function () { return f.apply(self, args); });
       };
     });
     // 세팅 · 처짐
@@ -823,131 +776,4 @@
 
   // 앞의 스크립트가 모두 동기 로드된 뒤라 바로 설치합니다(부트 코드가 원래 함수를 먼저 부르지 않도록).
   install();
-})();
-
-/* ==========================================================================
- * 새 스타일: Long Blowout Waves (미국 살롱 스타일 — 긴 레이어드 + 끝부분 굵은 웨이브)
- *
- *   · 길이: 어깨~쇄골 (옆·뒤), 크라운·관자놀이는 레이어로 더 짧게
- *   · 앞머리 없음: 가운데 가르마로 양옆에 넘김 → 얼굴이 드러남, 얼굴선 레이어는 턱선
- *   · 컬: 뿌리~중간은 곧게, 끝 약 14cm만 굵은 롤(블로아웃)
- *       → CURL_BUNDLE.windCm = 끝에서부터 감기는 길이 (헤드리스 시험: 12cm면 위쪽은 0, 끝만 감김)
- *       → rodThickCm 5 = 굵은 롤, pitchThick 1.8 = 촘촘하지 않은 한 바퀴
- *   · 볼륨 위치(volPoint)를 아래쪽으로 — 끝이 풍성
- * 값은 모두 막대 숫자라 조정 화면에서 그대로 움직일 수 있습니다.
- * ======================================================================== */
-(function () {
-  'use strict';
-  var G = window;
-  var ID = 'long_blowout_waves';
-  if (typeof STYLE_SPECS === 'undefined' || typeof STYLES === 'undefined' || STYLE_SPECS[ID]) return;
-
-  var set = function (o, extra) {   // 펌·세팅 기준값(막대 숫자)
-    return Object.assign({ base: 25, define: 60, volShare: 55, volPoint: 75, weight: 35, curlLen: 14 }, extra || {}, o);   // curlLen 14 = 끝 14cm만 컬
-  };
-  STYLE_SPECS[ID] = {
-    name: 'Long blowout waves · Center part · Big bottom curls',
-    tipAt: {                 // 두상 높이 기준 끝 위치 (1.0 ≈ 턱선)
-      front: 1.00,           // 얼굴선 레이어: 턱선 (앞머리 없음)
-      crown: 1.15,           // 레이어 — 위쪽이 짧아야 끝 웨이브가 층층이 보임
-      temple: 1.18,          // 얼굴 감싸는 층
-      side: 1.42,            // 어깨
-      occipital: 1.50,
-      nape: 1.55             // 쇄골 근처
-    },
-    cut: {
-      crown:     set({ technique: 'uniform', elevation: 70, texture: 40, density: 90, curlDir: 20 }),
-      front:     set({ technique: 'uniform', elevation: 20, texture: 55, density: 45, line: 50, curlDir: -10 }, { volShare: 35 }),   // 얼굴 쪽으로 감싸는 컬 — 끝이 벌어지지 않게
-      temple:    set({ technique: 'uniform', elevation: 55, texture: 45, density: 75, overdirection: 30, curlDir: 5 }),
-      side:      set({ technique: 'uniform', elevation: 45, texture: 45, density: 100, curlDir: 25 }, { volShare: 65 }),
-      occipital: set({ technique: 'uniform', elevation: 45, texture: 40, density: 100, curlDir: 20 }, { volShare: 60 }),
-      nape:      set({ technique: 'uniform', elevation: 25, texture: 35, density: 100, line: 50, curlDir: 20 })
-    },
-    perm: { curl: 42, wave: 95 },     // wave 95 = 굵은 롤
-    styling: { sweep: 0, volume: 50, flow: 30, part: 0, partAmt: 65, finish: 55, sleek: 20 },   // part 0 = 가운데 가르마, partAmt 65 = 양옆으로 넘김(80이면 앞쪽 끝이 벌어짐)
-    globalCurl: 42,
-    color: '#1E1712'
-  };
-
-  STYLES.push({
-    id: ID, specId: ID,
-    name: 'Blowout Waves',
-    tags: 'Long layers · Center part · Big bottom curls',
-    length: 92, curl: 42, volume: 60, colorHex: '#1E1712'
-  });
-  try { if (typeof RECIPE_STYLES !== 'undefined' && RECIPE_STYLES.indexOf(ID) < 0) RECIPE_STYLES.push(ID); } catch (e) {}
-
-  if (G.STYLE_BASE && G.STYLE_BASE.addProfile) {
-    G.STYLE_BASE.addProfile(ID, {
-      label: 'Long blowout waves',
-      config: {
-        CURL_BUNDLE: {
-          rodThickCm: 5,       // 굵은 롤
-          pitchThick: 1.8,     // 한 바퀴가 느슨하게
-          relax: 1.2,
-          microAmp: 0.02,      // 잔곱슬 거의 없음(드라이로 편 결)
-          microPhase: 0.1
-        },
-        CURL3D_FIX: { ampGamma: 0.7 },
-        VOLUME3D: { AMP: 0.16 },
-        MQ_FRINGE: { on: false }   // 앞머리(뱅) 없음 — 가르마로 넘긴 얼굴선 레이어
-      },
-      volBase: 1.0,
-      after: { front: { curl: 30 } },   // 얼굴선은 바깥으로 넘어가는 C컬 정도
-      shade: { ao: 0.42, lumCap: 1.3, spec: 0.26, specPow: 60 }   // 블로아웃 광택 조금 더
-    });
-  }
-  try { if (typeof buildStyleGrid === 'function') buildStyleGrid(); } catch (e) { console.warn('[스타일] 목록 다시 그리기 실패', e); }
-  console.log('[스타일] Blowout Waves 추가');
-})();
-
-/* ==========================================================================
- * 앞 가르마 자리 뿌리 메우기 (마네킹 재심기)
- * Roots 보기로 확인: 이마 가운데 헤어라인에 뿌리가 한 칸 덩어리로 비어 있었음 = 원본 사진의 가르마 선이
- * 두피로 보여 밀도(den)가 baldDen(0.08) 아래로 잡힌 칸. 거기엔 가닥을 안 심어서 앞쪽이 벌어졌습니다.
- * 같은 가로줄(같은 높이)에서 양옆이 모두 머리인 좁은 빈 칸(최대 GAP칸)만 양옆 평균 밀도로 채웁니다.
- * 얼굴·두피 밖 칸(EST_OFFSCALP)과 헤어라인 바깥(한쪽만 머리)은 그대로 → 이마가 넓어지지 않음.
- * 원본 밀도 배열은 심은 뒤 되돌립니다. 끄기: STYLE_BASE.fillPartGap = false
- * ======================================================================== */
-(function () {
-  'use strict';
-  var G = window, SB = G.STYLE_BASE || {};
-  SB.fillPartGap = true;
-  var GAP = 6;
-  var orig = G.buildMannequinHair3D;
-  if (typeof orig !== 'function') return;
-  G.buildMannequinHair3D = function () {
-    var M = state && (state._hair3Dneutral || state.hair3D), R = M && M.roots;
-    if (!SB.fillPartGap || !R || !R.ok || !R.den || !R.NT || !R.NP) return orig.apply(this, arguments);
-    var NT = R.NT, NP = R.NP, den = R.den, est = R.est, bald = (typeof MANNEQUIN !== 'undefined' ? MANNEQUIN.baldDen : 0.08);
-    var OFF = (typeof EST_OFFSCALP !== 'undefined') ? EST_OFFSCALP : null;
-    var isOff = function (a, i) { return OFF !== null && a && a[i] === OFF; };
-    var saved = Array.prototype.slice.call(den), savedEst = est ? Array.prototype.slice.call(est) : null;
-    var hair = function (j) { return !isOff(savedEst, j) && saved[j] > bald; };
-    var filledLow = 0, filledOff = 0;
-    // 이마 쪽(앞) 헤어라인의 파인 홈은 "두피 밖"으로 판정돼 있었음(로그: 정면 phi0.95~1.05 두피밖 12칸, 밀도0은 5칸뿐)
-    // → 같은 가로줄에서 양옆이 머리인 좁은 칸은 두피 밖이어도 두피로 되돌려 심음. 위쪽 절반(phi<1.1)만.
-    var phiMax = 1.1;
-    for (var ip = 0; ip < NP; ip++) {
-      var phi = (ip + 0.5) / NP * Math.PI, row = ip * NT;
-      for (var it = 0; it < NT; it++) {
-        var i = row + it;
-        if (hair(i)) continue;
-        var off = isOff(savedEst, i);
-        if (off && phi > phiMax) continue;
-        var L = 0, Ld = 0, Rt = 0, Rd = 0;
-        for (var k = 1; k <= GAP; k++) { var j = row + (it - k + NT) % NT; if (hair(j)) { L = k; Ld = saved[j]; break; } }
-        for (var k2 = 1; k2 <= GAP; k2++) { var j2 = row + (it + k2) % NT; if (hair(j2)) { Rt = k2; Rd = saved[j2]; break; } }
-        if (!(L && Rt && L + Rt - 1 <= GAP)) continue;
-        den[i] = (Ld + Rd) / 2;
-        if (off) { est[i] = savedEst[row + (it - L + NT) % NT]; filledOff++; } else filledLow++;
-      }
-    }
-    try { return orig.apply(this, arguments); }
-    finally {
-      for (var q = 0; q < saved.length; q++) den[q] = saved[q];
-      if (savedEst) for (var q2 = 0; q2 < savedEst.length; q2++) est[q2] = savedEst[q2];
-      console.log('[가르마 뿌리 메우기] 좁은 빈 칸 채움 — 밀도 낮음 ' + filledLow + '칸 · 두피밖 판정 ' + filledOff + '칸 (끄기 STYLE_BASE.fillPartGap=false)');
-    }
-  };
 })();
