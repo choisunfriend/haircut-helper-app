@@ -22,8 +22,10 @@
  *      (예전: 3벌이 찰 때까지 옛 전체 가닥이 남아 있었음).
  *    · 3D 결과 화면을 나가면 장면(헤어·얼굴·의상)의 GPU 버퍼를 바로 반납합니다
  *      (예전: 다음에 다시 들어올 때까지 잡고 있었음).
+ *    · 3D 결과 화면에 들어가면 전체 가닥 기억을 비웁니다(완성본만 있으면 됨 · 조정 화면으로 돌아오면 다시 채움).
+ *    · 3D 헤어 색은 8비트로 담고(사진 색이 원래 8비트 — float의 1/4 크기), 버퍼 한 벌을 돌려 씁니다.
  *
- * 끄기: MOBILE_DIET.on=false (전부) · .drag=false · .pre3D=false · .prune=false · .release3D=false
+ * 끄기: MOBILE_DIET.on=false (전부) · .drag=false · .pre3D=false · .prune=false · .release3D=false · .freeFull=false
  * 상태: MOBILE_DIET.status()
  * ========================================================================== */
 (function () {
@@ -36,11 +38,12 @@
     dragLiveMs: 45,      //    직전 렌더가 이보다 빠르면 미루지 않고 실시간
     pre3D: true,         // ② 3D 헤어 미리 만들기
     preDelayMs: 700,     //    마지막 그림 뒤 이만큼 조용하면 시작
-    sliceMs: 8,          //    한 번에 일하는 시간
+    sliceMs: 12,         //    한 번에 일하는 시간
     prune: true,         // ③ 옛 상태 캐시 즉시 버림
-    release3D: true      // ③ 3D 화면 나갈 때 장면 반납
+    release3D: true,     // ③ 3D 화면 나갈 때 장면 반납
+    freeFull: true       // ③ 3D 화면에 들어갈 때 전체 가닥 기억 비움
   }, W.MOBILE_DIET || {});
-  var S = D.stats = { deferred: 0, lastRenderMs: 0, pruned: 0, released: 0, preHit: 0, preResume: 0, preCold: 0, preFallback: 0, preBuiltMs: 0 };
+  var S = D.stats = { freedFull: 0, bufReuse: 0, deferred: 0, lastRenderMs: 0, pruned: 0, released: 0, preHit: 0, preResume: 0, preCold: 0, preFallback: 0, preBuiltMs: 0 };
 
   function now() { try { return performance.now(); } catch (e) { return Date.now(); } }
   function scr() { try { return currentScreen; } catch (e) { return ''; } }
@@ -188,7 +191,42 @@
    *   다른 점은 전체 목록을 단계마다 통째로 복사하지 않는다는 것뿐입니다.
    * ────────────────────────────────────────────────────────────────────── */
   var pre = { sig: null, obj: null, ready: false, job: null, tries: 0 };
-  function dropPre() { pre.sig = null; pre.obj = null; pre.ready = false; pre.job = null; pre.tries = 0; }
+  /* 버퍼 한 벌을 돌려 씀 — 값이 바뀔 때마다 수십 MB를 새로 잡았다 버리지 않게 */
+  var pool = { pos: null, col: null };
+  function recycle(b) {
+    if (!b || !b.pos || !b.col) return;
+    if (!pool.pos || b.pos.length > pool.pos.length) { pool.pos = b.pos; pool.col = b.col; }
+  }
+  function takeBufs(need) {
+    if (pool.pos && pool.pos.length >= need && pool.col.length >= need) {
+      var b = { pos: pool.pos, col: pool.col }; pool.pos = pool.col = null; S.bufReuse++; return b;
+    }
+    pool.pos = pool.col = null;
+    var cap = Math.ceil(need * 1.05 / 6) * 6;
+    return { pos: new Float32Array(cap), col: new Uint8Array(cap) };
+  }
+  function dropPre() {
+    try {
+      if (pre.job && pre.job.bufs) recycle(pre.job.bufs);
+      var o = pre.obj;
+      if (o && !o.parent && o.userData && o.userData._bufs) {      // 장면에 안 붙어 있을 때만 버퍼 회수
+        try { o.geometry.dispose(); } catch (e) {}
+        recycle(o.userData._bufs); o.userData._bufs = null;
+      }
+    } catch (e2) {}
+    pre.sig = null; pre.obj = null; pre.ready = false; pre.job = null; pre.tries = 0;
+  }
+  /* 3D 결과 화면에 들어가면(헤어 완성본을 붙인 뒤) 그걸 만드는 데 쓴 "전체 가닥" 기억을 비움.
+     조정 화면에서는 뷰를 바꿀 때 빨리 그리려고 들고 있지만, 3D 화면에 있는 동안은 쓸 일이 없음. */
+  function freeFull(model) {
+    if (!D.freeFull) return;
+    try {
+      var k = adjCacheSig(model, null, 1);
+      if (ADJ_CACHE._map.delete(k)) ADJ_CACHE._lru = ADJ_CACHE._lru.filter(function (x) { return x !== k; });
+      var Q = W.GYEOL_3D;
+      if (Q && typeof Q.dropMemo === 'function') { Q.dropMemo(); S.freedFull++; }
+    } catch (e) {}
+  }
 
   function braidOn() { return typeof BRAID !== 'undefined' && BRAID.on && typeof buildBraid3DObject === 'function'; }
   function canStream() {
@@ -210,6 +248,7 @@
     return a.join('\u00a7');
   }
 
+  function b8(v) { return v >= 1 ? 255 : v > 0 ? Math.round(v * 255) : 0; }
   function Job(sig, model) {
     this.sig = sig; this.model = model; this.stage = 0; this.done = false; this.obj = null;
     this.i = 0; this.cur = 0; this.pix = 0; this.ms = 0; this.frac = 0;
@@ -263,8 +302,8 @@
 
     var segs = 0;
     for (i = 0; i < n; i++) { var p = list[i] && list[i].pts; if (p && p.length >= 2) segs += p.length - 1; }
-    this.pos = new Float32Array(segs * 6);
-    this.col = new Float32Array(segs * 6);
+    this.bufs = takeBufs(segs * 6);               // 위치 float32 · 색 8비트(사진 색이 원래 8비트)
+    this.pos = this.bufs.pos; this.col = this.bufs.col;
     this.color = new THREE.Color();
     this.stage = 1;
   };
@@ -320,7 +359,7 @@
       if (!isFinite(A.x) || !isFinite(A.y) || !isFinite(A.z)) continue;
       if (!isFinite(B.x) || !isFinite(B.y) || !isFinite(B.z)) continue;
       P[o] = A.x; P[o + 1] = A.y; P[o + 2] = A.z; P[o + 3] = B.x; P[o + 4] = B.y; P[o + 5] = B.z;
-      K[o] = C.r; K[o + 1] = C.g; K[o + 2] = C.b; K[o + 3] = C.r; K[o + 4] = C.g; K[o + 5] = C.b;
+      K[o] = K[o + 3] = b8(C.r); K[o + 1] = K[o + 4] = b8(C.g); K[o + 2] = K[o + 5] = b8(C.b);
       o += 6;
     }
     this.cur = o;
@@ -329,13 +368,14 @@
   Job.prototype.makeObject = function () {
     this.count = this.list.length;
     this.list = this.rep = this.repCache = null;
-    if (!this.cur) return this.finish(null);
-    if (this.cur < this.pos.length) { this.pos = this.pos.slice(0, this.cur); this.col = this.col.slice(0, this.cur); }
+    if (!this.cur) { recycle(this.bufs); this.bufs = null; return this.finish(null); }
+    this.pos = this.pos.subarray(0, this.cur); this.col = this.col.subarray(0, this.cur);
     var geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(this.col, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(this.col, 3, true));
     var obj = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ vertexColors: true }));
     obj.name = 'adjustedHair';
+    obj.userData._bufs = this.bufs; this.bufs = null;
     this.obj = obj;
 
     // 음영(24번 shadeHairObject와 같은 식 — 색 버퍼에 바로 덮어씀)
@@ -362,7 +402,7 @@
   };
   Job.prototype.shadeCap = function () {           // 밝기 중앙값 → 상한
     var K = this.col, n = this.n, L = new Float64Array(Math.ceil(n / 7)), c = 0;
-    for (var j = 0; j < n; j += 7) L[c++] = 0.299 * K[j * 3] + 0.587 * K[j * 3 + 1] + 0.114 * K[j * 3 + 2];
+    for (var j = 0; j < n; j += 7) L[c++] = (0.299 * K[j * 3] + 0.587 * K[j * 3 + 1] + 0.114 * K[j * 3 + 2]) / 255;
     L.sort();
     this.cap = (L[L.length >> 1] || 0.2) * this.sh.lumCap;
     var Lt = [0.3, 0.8, 0.5], V = [0, 0, 1], H = [Lt[0] + V[0], Lt[1] + V[1], Lt[2] + V[2]];
@@ -380,13 +420,13 @@
       for (var q = s; q < s + 2; q++) {
         var bm = bmax[bin[q]], d = bm > 1.02 ? Math.max(0, Math.min(1, (rho[q] - 1) / (bm - 1))) : 1;
         var ao = sh.ao + (1 - sh.ao) * Math.pow(d, 0.8);
-        var rr = K[q * 3], gg = K[q * 3 + 1], bb = K[q * 3 + 2];
+        var rr = K[q * 3] / 255, gg = K[q * 3 + 1] / 255, bb = K[q * 3 + 2] / 255;
         var lum = 0.299 * rr + 0.587 * gg + 0.114 * bb;
         if (lum > cap && lum > 0) { var f = cap / lum; rr *= f; gg *= f; bb *= f; }
         var sp = kk * sh.spec * d * d;
-        K[q * 3] = Math.min(1, rr * ao + sp * 0.85);
-        K[q * 3 + 1] = Math.min(1, gg * ao + sp * 0.8);
-        K[q * 3 + 2] = Math.min(1, bb * ao + sp * 0.72);
+        K[q * 3] = b8(rr * ao + sp * 0.85);
+        K[q * 3 + 1] = b8(gg * ao + sp * 0.8);
+        K[q * 3 + 2] = b8(bb * ao + sp * 0.72);
       }
     }
     this.i = end;
@@ -445,7 +485,11 @@
     if (!pre.job) {
       var Q = W.GYEOL_3D;
       if (!Q || typeof Q.warmReady !== 'function') return;          // 28번이 옛 버전 — 진입 때 만듦
-      if (!Q.warmReady()) { if (++pre.tries < 240) schedulePre(500); return; }   // 가닥 미리계산이 끝나길 기다림
+      if (!Q.warmReady()) {                                           // 가닥 미리계산이 끝나길 기다림
+        if (pre.tries === 0 && Q.scheduleWarm) Q.scheduleWarm();
+        if (++pre.tries < 240) schedulePre(500);
+        return;
+      }
       pre.job = new Job(sig, model);
     }
     try { pre.job.step(D.sliceMs); }
@@ -454,7 +498,10 @@
     var job = pre.job; pre.job = null;
     var still = null;
     try { still = fullSig(model); } catch (e) {}
-    if (still !== sig) { dropPre(); return schedulePre(); }           // 만드는 사이 값이 바뀜
+    if (still !== sig) {                                             // 만드는 사이 값이 바뀜
+      try { if (job.obj) recycle(job.obj.userData._bufs); } catch (e) {}
+      dropPre(); return schedulePre();
+    }
     pre.obj = job.obj; pre.ready = true; S.preBuiltMs = job.ms;
     console.log(TAG + ' 3D 헤어 미리 만들기 끝 — 가닥 ' + (job.count || 0) + '개 · 선분 ' + (job.obj ? job.pos.length / 6 : 0) +
       '개 · 일한 시간 ' + Math.round(job.ms) + 'ms (조금씩 나눠서) · 3D 결과보기는 이걸 받아 씁니다');
@@ -478,6 +525,7 @@
           job.step(Infinity);
           pre.obj = job.obj; pre.ready = true;
         }
+        freeFull(model);   // 3D 화면에 있는 동안은 전체 가닥 기억이 필요 없음(조정 화면으로 돌아오면 28번이 다시 채움)
         console.log(TAG + ' 3D 헤어 — ' + how + ' · ' + Math.round(now() - t0) + 'ms');
         return pre.obj;
       } catch (e) {
@@ -505,7 +553,7 @@
   if (typeof ppl === 'function') W.perfPanelLines = function () {
     var L = ppl.apply(this, arguments) || [];
     return L.concat(['[폰 다이어트] 드래그 중 미룬 그림 ' + S.deferred + '회(직전 렌더 ' + Math.round(S.lastRenderMs) + 'ms) · 옛 캐시 버림 ' + S.pruned +
-      '벌 · 3D 장면 반납 ' + S.released + '회 · 3D 미리 만들기: ' + preLine() + ' (받아 씀 ' + S.preHit + ' / 이어서 ' + S.preResume +
+      '벌 · 전체 가닥 기억 비움 ' + S.freedFull + '회 · 버퍼 재사용 ' + S.bufReuse + '회 · 3D 장면 반납 ' + S.released + '회 · 3D 미리 만들기: ' + preLine() + ' (받아 씀 ' + S.preHit + ' / 이어서 ' + S.preResume +
       ' / 진입 때 만듦 ' + S.preCold + ' / 원래 방식 ' + S.preFallback + ')']);
   };
 

@@ -637,6 +637,7 @@
     warmTimer = null;
     var scr = (typeof currentScreen !== 'undefined') ? currentScreen : '';
     if (scr !== 'adjust' && scr !== 'result') return;
+    if (typeof Q.hold === 'function' && Q.hold()) return;   // 37번: 3D 헤어가 이미 만들어져 있으면 가닥을 다시 채우지 않음
     var model = state.hair3Dneutral;
     if (!model || !model.strands) return;
     var psig = strandSig(model);
@@ -679,6 +680,8 @@
     if (same !== n || a.length !== b.length) { Q.memo = false; Q.check += ' → 기억 끔(원래 방식으로 계산)'; }
   }
   Q.scheduleWarm = scheduleWarm;
+  /* 37번: 3D 헤어를 다 만든 뒤에는 전체 가닥 기억이 필요 없음 — 비움(다음에 필요해지면 처음부터 다시 채움) */
+  Q.dropMemo = function () { M.map = new WeakMap(); warmSig = null; warmIdx = 0; Q.warmDone = 0; };
   /* 37번(3D 미리 만들기)이 묻는 창구 — 지금 상태의 가닥이 전부 미리 계산돼 있나 */
   Q.warmReady = function () {
     try {
