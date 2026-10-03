@@ -30,6 +30,14 @@
  *
  * 한계(v1): 측면 사진이 28~51°라 정옆·뒤의 두께는 추정이 섞입니다. 속머리(겉에서 안 보이는 층)는 겉 결을 따릅니다.
  *
+ * v2 (2026-10-03b · 폼파두르 첫 실측: 뿌리 crown 68% → 30%로 정상화, 머리가 두상에 붙음. 남은 것 —
+ *      꺾임 26.8°(가짜 두상에서는 3.8°) · 그루터기 4,227개가 페이드 자리에 주황 점선으로 보임 · 길이 상한에 걸린 가닥 34%)
+ *   · 관성 — 매 걸음 사진 결을 그대로 따르지 않고 직전 방향과 섞습니다(사진 결의 픽셀 잡음이 가닥을 떨게 했음).
+ *   · 다 기른 뒤 가닥을 한 번 고르게 폅니다(양 끝 고정).
+ *   · 두께를 칸 단위로 뚝뚝 읽지 않고 이웃 칸과 보간합니다(칸 경계에서 높이가 계단처럼 튀던 것).
+ *   · 사진에 머리가 없다고 나오는 자리의 뿌리는 억지로 그루터기를 세우지 않고 안 심습니다(페이드는 두피색 그대로).
+ *   · 길이 상한 — 짧은 머리는 섹션별 원본 길이 중앙값 × 1.25, 어깨 아래로 내려오는 긴 머리는 넉넉히(p95 × 1.3).
+ *
  * 끄기: 버튼 또는 REGROW.on=false 후 REGROW.refresh()
  * ========================================================================== */
 (function () {
@@ -46,7 +54,11 @@
     tStep: 0.012,
     outlineCos: 0.3,    // 두께는 그 자리를 거의 옆에서(법선·카메라축 각 73° 이상) 보는 사진으로만 잼
     tFloor: 0.012,      // 두께 바닥(≈ 0.25cm)
-    lenPct: 0.8, lenMul: 1.15,    // 길이 상한 = 섹션별 원본 가닥 길이의 80백분위 × 1.15
+    lenPct: 0.5, lenMul: 1.25,    // 짧은 머리 길이 상한 = 섹션별 원본 가닥 길이 중앙값 × 1.25
+    longPct: 0.95, longMul: 1.3,  // 긴 머리(어깨 아래로 내려오는 가닥이 longShare 넘게 있음)는 넉넉히
+    longShare: 0.1,
+    inertia: 0.55,      // 직전 방향을 섞는 비율(0 = 사진 결 그대로)
+    smooth: 2,          // 다 기른 뒤 고르게 펴는 횟수
     tapPx: 4,           // 머리 영역 판정 여유(800px 기준)
     gravity: 0.25,      // 두피 밖 구간에서 중력을 섞는 비율
     sliceMs: 30,
@@ -186,6 +198,21 @@
       l = Math.hypot(ax, ay, az);
       return l > 1e-9 ? { x: ax / l, y: ay / l, z: az / l } : null;
     }
+    function mixDir(prev, d) {       // 관성
+      var a = G.inertia, x = prev.x * a + d.x * (1 - a), y = prev.y * a + d.y * (1 - a), z = prev.z * a + d.z * (1 - a), l = Math.hypot(x, y, z);
+      return l > 1e-6 ? { x: x / l, y: y / l, z: z / l } : d;
+    }
+    function smoothPts(pts) {        // 양 끝 고정, 가운데만 이웃 평균 쪽으로
+      var n = pts.length, it, i, out;
+      if (n < 4 || !(G.smooth > 0)) return pts;
+      for (it = 0; it < G.smooth; it++) {
+        out = new Array(n); out[0] = pts[0]; out[n - 1] = pts[n - 1];
+        for (i = 1; i < n - 1; i++) out[i] = { x: pts[i].x * 0.5 + (pts[i - 1].x + pts[i + 1].x) * 0.25, y: pts[i].y * 0.5 + (pts[i - 1].y + pts[i + 1].y) * 0.25, z: pts[i].z * 0.5 + (pts[i - 1].z + pts[i + 1].z) * 0.25 };
+        pts = out;
+      }
+      for (i = 1; i < n; i++) { try { pts[i] = ellipsoidPushOut(pts[i], Es.a, Es.b, Es.c, CY); } catch (e) {} }
+      return pts;
+    }
     function tangent(d, n) {
       var k = d.x * n.x + d.y * n.y + d.z * n.z, x = d.x - k * n.x, y = d.y - k * n.y, z = d.z - k * n.z, l = Math.hypot(x, y, z);
       return l > 1e-6 ? { x: x / l, y: y / l, z: z / l } : null;
@@ -240,7 +267,17 @@
       }
       for (i = 0; i < NC; i++) if (known[i] === 1) T[i] = Math.max(G.tFloor, Math.min(G.tMax, tmp[i]));
     }
-    function thickAt(p) { var i = cellOf(p); return known[i] === 1 ? T[i] : G.tFloor; }
+    function thickAt(p) {            // 이웃 칸과 보간(두피 안 칸끼리만)
+      var cy = Math.max(-1, Math.min(1, (p.y - CY) / Es.b)), fr = Math.acos(cy) / Math.PI * NP - 0.5, fc = (Math.atan2(p.x / Es.a, p.z / Es.c) + Math.PI) / (2 * Math.PI) * NT - 0.5;
+      var r0 = Math.floor(fr), c0 = Math.floor(fc), tr = fr - r0, tc = fc - c0, sum = 0, wsum = 0, dr, dc, rr, cc, j, w;
+      for (dr = 0; dr <= 1; dr++) for (dc = 0; dc <= 1; dc++) {
+        rr = Math.max(0, Math.min(NP - 1, r0 + dr)); cc = ((c0 + dc) % NT + NT) % NT; j = rr * NT + cc;
+        if (known[j] !== 1) continue;
+        w = (dr ? tr : 1 - tr) * (dc ? tc : 1 - tc);
+        sum += w * T[j]; wsum += w;
+      }
+      return wsum > 1e-6 ? sum / wsum : G.tFloor;
+    }
 
     /* 길이 상한·색 팔레트 — 원본 사진 가닥에서 */
     var lenBy = {}, colBy = {}, allLen = [];
@@ -250,8 +287,12 @@
       (lenBy[k] || (lenBy[k] = [])).push(L); allLen.push(L);
       if (s.color) { var cl = colBy[k] || (colBy[k] = []); if (cl.length < 400) cl.push(s.color); }
     });
-    var capAll = q(allLen, G.lenPct) * G.lenMul, cap = {};
-    Object.keys(lenBy).forEach(function (k) { cap[k] = q(lenBy[k], G.lenPct) * G.lenMul; });
+    var lowTips = 0;
+    photo.strands.forEach(function (s) { if (s.pts[s.pts.length - 1].y < yBody) lowTips++; });
+    var isLong = lowTips / Math.max(1, photo.strands.length) > G.longShare;
+    var cPct = isLong ? G.longPct : G.lenPct, cMul = isLong ? G.longMul : G.lenMul;
+    var capAll = q(allLen, cPct) * cMul, cap = {};
+    Object.keys(lenBy).forEach(function (k) { cap[k] = q(lenBy[k], cPct) * cMul; });
     function capFor(sec) { return cap[sec] > 0 ? cap[sec] : (capAll > 0 ? capAll : 0.5); }
 
     /* 뿌리 예산(마네킹과 같은 식: 밀도 × 셀 면적) */
@@ -291,6 +332,7 @@
       var n = normalAt(F), u = G.layerLo + (G.layerHi - G.layerLo) * rnd();
       var sec = null; try { sec = resolveSection3D(F, CY, Es.b); } catch (e) {} sec = sec || 'crown';
       var Lcap = capFor(sec), ramp = Math.max(0.03, Math.min(0.12, 0.25 * Lcap));
+      var stp = Math.max(G.step, Lcap / G.maxSteps);      // 긴 가닥은 걸음을 넓혀 걸음 수 상한에 안 걸리게
       var pts = [{ x: F.x, y: F.y, z: F.z }], P = F, s = 0, prev = null, miss = 0, k, d, dt, fl, estSteps = 0, steps = 0, free = false, stop = 'max';
 
       // 첫 방향과 앞뒤
@@ -310,10 +352,11 @@
         if (!free) {
           // 두피 위 구간: 발은 두피면을 따라, 몸은 그 위 두께만큼 떠서
           fl = flow(P, n, prev); if (!fl) estSteps++;
+          if (fl) fl = mixDir(prev, fl);
           dt = tangent(fl || prev, n) || prev;
-          var F2 = onSurf({ x: F.x + dt.x * G.step, y: F.y + dt.y * G.step, z: F.z + dt.z * G.step });
+          var F2 = onSurf({ x: F.x + dt.x * stp, y: F.y + dt.y * stp, z: F.z + dt.z * stp });
           if (offScalp(cellOf(F2))) { free = true; st.free++; prev = dt; k--; steps--; continue; }
-          var n2 = normalAt(F2), s2 = s + G.step, h2 = u * thickAt(F2) * Math.min(1, s2 / ramp);
+          var n2 = normalAt(F2), s2 = s + stp, h2 = u * thickAt(F2) * Math.min(1, s2 / ramp);
           var P2 = { x: F2.x + n2.x * h2, y: F2.y + n2.y * h2, z: F2.z + n2.z * h2 };
           if (vote(P2) === 0) { if (++miss >= 2) { stop = 'mask'; break; } } else miss = 0;
           pts.push(P2); F = F2; n = n2; P = P2; s = s2; prev = tangent(dt, n2) || dt;
@@ -321,20 +364,19 @@
           // 두피 밖 구간: 결 + 중력, 두상 안으로는 못 들어감
           var rr = Math.hypot(P.x, P.z), nc = rr > 1e-6 ? { x: P.x / rr, y: 0, z: P.z / rr } : n;
           fl = flow(P, nc, prev); if (!fl) estSteps++;
-          d = fl || prev;
+          d = fl ? mixDir(prev, fl) : prev;
           var gx = d.x * (1 - G.gravity), gy = d.y * (1 - G.gravity) - G.gravity, gz = d.z * (1 - G.gravity), gl = Math.hypot(gx, gy, gz) || 1;
           d = { x: gx / gl, y: gy / gl, z: gz / gl };
-          var Q = { x: P.x + d.x * G.step, y: P.y + d.y * G.step, z: P.z + d.z * G.step };
+          var Q = { x: P.x + d.x * stp, y: P.y + d.y * stp, z: P.z + d.z * stp };
           try { Q = ellipsoidPushOut(Q, Es.a * 1.02, Es.b * 1.02, Es.c * 1.02, CY); } catch (e) {}
           if (vote(Q) === 0) { if (++miss >= 2) { stop = 'mask'; break; } } else miss = 0;
-          pts.push({ x: Q.x, y: Q.y, z: Q.z }); P = Q; s += G.step; prev = d;
+          pts.push({ x: Q.x, y: Q.y, z: Q.z }); P = Q; s += stp; prev = d;
         }
         if (s >= Lcap) { stop = 'cap'; break; }
       }
-      if (miss > 0 && pts.length > 1 + miss) pts.length -= miss;       // 머리 영역 밖으로 나간 꼬리는 버림
-      else if (miss > 0 && pts.length > 2) pts.length = 2;
-      if (pts.length < 2) { st.skipped++; return null; }
-      if (pts.length < 3) st.stub++;
+      if (miss > 0) pts.length = Math.max(1, pts.length - miss);        // 머리 영역 밖으로 나간 꼬리는 버림
+      if (pts.length < 3) { st.skipped++; return null; }                // 사진에 머리가 없는 자리 — 그루터기를 억지로 세우지 않음
+      pts = smoothPts(pts);
       if (stop === 'mask') st.stopMask++; else if (stop === 'cap') st.stopCap++; else st.stopMax++;
       st.steps += steps; st.est += estSteps;
 
@@ -386,6 +428,7 @@
           ms: Math.round(now() - t0), n: st.n, stub: st.stub, skipped: st.skipped, sec: st.sec,
           lenMed: q(st.len, 0.5) * cm, lenP90: q(st.len, 0.9) * cm, kinkMed: q(st.kink, 0.5), kinkP90: q(st.kink, 0.9),
           estPct: st.steps ? st.est / st.steps * 100 : 0, stopMask: st.stopMask, stopCap: st.stopCap, stopMax: st.stopMax, free: st.free, flipped: st.flipped,
+          isLong: isLong, capTxt: Object.keys(cap).map(function (k) { return k + ' ' + n1(cap[k] * cm); }).join(' · '),
           tMed: q(tv, 0.5), tP90: q(tv, 0.9), tMeasured: tStat.measured, tFilled: tStat.filled, tZero: tStat.zero, cells: NC,
           cams: cams.map(function (c) { return c.angle; }).join(',')
         };
@@ -493,9 +536,10 @@
     var s = G.stats, L = ['[다시 기르기] ' + (G.on ? '켜짐' : '꺼짐') + (G.building ? ' · 만드는 중' : '') + (G.model && G.src === state._hair3Dneutral ? ' · 모델 있음' : ' · 모델 없음') + (G.lastErr ? ' · ⚠ ' + G.lastErr : '')];
     if (!s) return L;
     var tot = s.n || 1, secs = Object.keys(s.sec).map(function (k) { return k + ' ' + Math.round(s.sec[k] / tot * 100) + '%'; }).join(' · ');
-    L.push('  가닥 ' + s.n + '개(짧은 그루터기 ' + s.stub + ' · 못 심음 ' + s.skipped + ') · ' + s.ms + 'ms · 사진 ' + s.cams);
+    L.push('  가닥 ' + s.n + '개(사진에 머리가 없어 안 심은 뿌리 ' + s.skipped + ') · ' + s.ms + 'ms · 사진 ' + s.cams);
     L.push('  뿌리 분포 — ' + secs);
     L.push('  길이 ' + n1(s.lenMed) + '/' + n1(s.lenP90) + 'cm(중앙값/p90) · 꺾임 ' + n1(s.kinkMed) + '°/' + n1(s.kinkP90) + '° · 결을 사진에서 못 읽고 이어 간 걸음 ' + n1(s.estPct) + '%');
+    L.push('  길이 상한(' + (s.isLong ? '긴 머리 — 넉넉히' : '짧은 머리 — 섹션 중앙값×' + G.lenMul) + ') cm: ' + s.capTxt);
     L.push('  멈춘 이유 — 머리 영역 밖 ' + s.stopMask + ' · 길이 상한 ' + s.stopCap + ' · 걸음 수 상한 ' + s.stopMax + ' · 두피 밖으로 나가 늘어뜨린 가닥 ' + s.free + ' · 반대로 기른 뿌리(아래쪽에 머리 없음) ' + s.flipped);
     L.push('  두께(두피→머리 겉면) 중앙값 ' + n1(s.tMed) + 'cm · p90 ' + n1(s.tP90) + 'cm · 윤곽선으로 잰 칸 ' + s.tMeasured + ' · 이웃으로 메운 칸(추정) ' + s.tFilled + ' · 두께 0으로 잰 칸 ' + s.tZero + ' / 전체 ' + s.cells);
     return L;
