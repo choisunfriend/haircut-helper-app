@@ -539,6 +539,7 @@
   'use strict';
   var G = window, F = G.STYLE_FAST;
   var Q = G.GYEOL_3D = { memo: true, prewarm: true, fastColor: true, skipDiag: true, bakeMemo: true,
+    warmDelayMs: 400,   // (2026-10-03c) 900 → 400: 실측에서 미리 만들기가 끝나기 전에 3D로 넘어가는 일이 대부분이었음
     hits: 0, miss: 0, warmDone: 0, warmTotal: 0, bakeHits: 0, bakeMiss: 0 };
   function now() { try { return performance.now(); } catch (e) { return Date.now(); } }
   var T = (F && F.t3) ? F.t3 : { scr: {} };
@@ -631,32 +632,45 @@
   function scheduleWarm() {
     if (!Q.memo || !Q.prewarm) return;
     if (warmTimer) clearTimeout(warmTimer);
-    warmTimer = setTimeout(warmSlice, 900);
+    warmTimer = setTimeout(warmSlice, Q.warmDelayMs >= 0 ? Q.warmDelayMs : 900);
+  }
+  /* 한 조각(budget ms)만 일함. 돌려주는 값: true = 더 할 게 없음(끝났거나 할 수 없음) · false = 남음 */
+  function warmCore(budget) {
+    var model = state.hair3Dneutral;
+    if (!model || !model.strands) return true;
+    var psig = strandSig(model);
+    if (!psig) return true;
+    if (psig !== M.sig) { M.sig = psig; M.map = new WeakMap(); }
+    if (psig !== warmSig) { warmSig = psig; warmIdx = 0; warmCtx = makeCtx(model); Q.warmDone = 0; }
+    Q.warmTotal = model.strands.length;
+    var t0 = now();
+    while (warmIdx < model.strands.length && now() - t0 < budget) {
+      var s = model.strands[warmIdx++];
+      if (M.map.has(s)) continue;
+      M.map.set(s, computeEntry(s, warmCtx));
+      Q.warmDone++;
+    }
+    return warmIdx >= model.strands.length;
   }
   function warmSlice() {
     warmTimer = null;
     var scr = (typeof currentScreen !== 'undefined') ? currentScreen : '';
     if (scr !== 'adjust' && scr !== 'result') return;
     if (typeof Q.hold === 'function' && Q.hold()) return;   // 37번: 3D 헤어가 이미 만들어져 있으면 가닥을 다시 채우지 않음
-    var model = state.hair3Dneutral;
-    if (!model || !model.strands) return;
-    var psig = strandSig(model);
-    if (!psig) return;
-    if (psig !== M.sig) { M.sig = psig; M.map = new WeakMap(); }
-    if (psig !== warmSig) { warmSig = psig; warmIdx = 0; warmCtx = makeCtx(model); Q.warmDone = 0; }
-    Q.warmTotal = model.strands.length;
-    var t0 = now();
-    try {
-      while (warmIdx < model.strands.length && now() - t0 < 10) {
-        var s = model.strands[warmIdx++];
-        if (M.map.has(s)) continue;
-        M.map.set(s, computeEntry(s, warmCtx));
-        Q.warmDone++;
-      }
-    } catch (e) { console.warn('[3D 미리계산] 중단', e); return; }
-    if (warmIdx < model.strands.length) warmTimer = setTimeout(warmSlice, 0);
-    else if (!Q.checked) setTimeout(selfCheck, 50);
+    var done;
+    try { done = warmCore(10); } catch (e) { console.warn('[3D 미리계산] 중단', e); return; }
+    if (!done) warmTimer = setTimeout(warmSlice, 0);
+    else if (!Q.checked && Q.warmTotal && warmIdx >= Q.warmTotal) setTimeout(selfCheck, 50);
   }
+  /* 37번(3D 진입 때 나눠서 만들기)이 부르는 창구 — 화면과 상관없이 한 조각 일하고 진행률(0~1)을 돌려줌 */
+  Q.warmStep = function (budget) {
+    if (!Q.memo || !Q.prewarm) return 1;
+    try {
+      if (warmTimer) { clearTimeout(warmTimer); warmTimer = null; }
+      if (warmCore(budget || 10)) return 1;
+      return Q.warmTotal ? Math.min(0.999, warmIdx / Q.warmTotal) : 0;
+    } catch (e) { console.warn('[3D 미리계산] 중단', e); return 1; }
+  };
   /* 자가 검증 — 미리계산이 처음 끝나면 한 번: 원래 함수와 새 함수의 결과(간격 16)를 점 단위로 비교 */
   function selfCheck() {
     if (Q.checked) return; Q.checked = true;

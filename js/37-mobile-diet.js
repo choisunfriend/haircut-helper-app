@@ -25,7 +25,13 @@
  *    · 3D 결과 화면에 들어가면 전체 가닥 기억을 비웁니다(완성본만 있으면 됨 · 조정 화면으로 돌아오면 다시 채움).
  *    · 3D 헤어 색은 8비트로 담고(사진 색이 원래 8비트 — float의 1/4 크기), 버퍼 한 벌을 돌려 씁니다.
  *
- * 끄기: MOBILE_DIET.on=false (전부) · .drag=false · .pre3D=false · .prune=false · .release3D=false · .freeFull=false
+ * ④ (2026-10-03c) 3D 진입 때 나눠서 만들기 — 실측(4GB 폰): 미리 만들기가 끝나기 전에 넘어가면
+ *    빈 화면으로 2~5초 멈췄습니다(이어서 2087ms · 진입 때 만듦 4713ms). 남은 일을 한 번에 하지 않고
+ *    조각(entrySliceMs)으로 나눠 하면서 "3D 헤어 만드는 중… ○○%"를 보여 줍니다. 총 시간은 비슷하지만
+ *    화면이 얼지 않습니다. 미리 만들기 시작도 앞당겼습니다(700 → 400ms, 확인 간격 500 → 200ms).
+ *    진단 줄에 마지막 헤어 만들기의 단계별 시간(가닥 계산 · 가닥 쓰기 · 음영)이 찍힙니다.
+ *
+ * 끄기: MOBILE_DIET.on=false (전부) · .entryProgress=false · .drag=false · .pre3D=false · .prune=false · .release3D=false · .freeFull=false
  * 상태: MOBILE_DIET.status()
  * ========================================================================== */
 (function () {
@@ -37,13 +43,16 @@
     dragPauseMs: 140,    //    손이 이만큼 멈추면 그림
     dragLiveMs: 45,      //    직전 렌더가 이보다 빠르면 미루지 않고 실시간
     pre3D: true,         // ② 3D 헤어 미리 만들기
-    preDelayMs: 700,     //    마지막 그림 뒤 이만큼 조용하면 시작
+    preDelayMs: 400,     //    마지막 그림 뒤 이만큼 조용하면 시작 (2026-10-03c: 700 → 400)
+    prePollMs: 200,      //    가닥 미리계산이 끝났는지 확인하는 간격 (2026-10-03c: 500 → 200)
     sliceMs: 12,         //    한 번에 일하는 시간
+    entryProgress: true, // ④ 3D 진입 때 남은 일을 나눠서 하며 진행률 표시
+    entrySliceMs: 40,    //    진입 때 한 조각
     prune: true,         // ③ 옛 상태 캐시 즉시 버림
     release3D: true,     // ③ 3D 화면 나갈 때 장면 반납
     freeFull: true       // ③ 3D 화면에 들어갈 때 전체 가닥 기억 비움
   }, W.MOBILE_DIET || {});
-  var S = D.stats = { freedFull: 0, bufReuse: 0, deferred: 0, lastRenderMs: 0, pruned: 0, released: 0, preHit: 0, preResume: 0, preCold: 0, preFallback: 0, preBuiltMs: 0 };
+  var S = D.stats = { freedFull: 0, bufReuse: 0, deferred: 0, lastRenderMs: 0, pruned: 0, released: 0, preHit: 0, preResume: 0, preCold: 0, preFallback: 0, preBuiltMs: 0, lastBuild: null };
 
   function now() { try { return performance.now(); } catch (e) { return Date.now(); } }
   function scr() { try { return currentScreen; } catch (e) { return ''; } }
@@ -214,7 +223,7 @@
         recycle(o.userData._bufs); o.userData._bufs = null;
       }
     } catch (e2) {}
-    pre.sig = null; pre.obj = null; pre.ready = false; pre.job = null; pre.tries = 0;
+    pre.sig = null; pre.obj = null; pre.ready = false; pre.job = null; pre.tries = 0; pre.entryMade = false;
   }
   /* 3D 결과 화면에 들어가면(헤어 완성본을 붙인 뒤) 그걸 만드는 데 쓴 "전체 가닥" 기억을 비움.
      조정 화면에서는 뷰를 바꿀 때 빨리 그리려고 들고 있지만, 3D 화면에 있는 동안은 쓸 일이 없음. */
@@ -252,6 +261,7 @@
   function Job(sig, model) {
     this.sig = sig; this.model = model; this.stage = 0; this.done = false; this.obj = null;
     this.i = 0; this.cur = 0; this.pix = 0; this.ms = 0; this.frac = 0;
+    this.tm = [0, 0, 0];   // 단계별 ms: 가닥 계산(init) · 가닥 쓰기(다듬기·뭉치기·색) · 음영
   }
   Job.prototype.finish = function (obj) { this.obj = obj; this.done = true; this.frac = 1; this.list = this.rep = this.repCache = null; };
 
@@ -434,8 +444,9 @@
 
   // budget(ms) 동안만 일하고 돌아옴. Infinity면 끝까지.
   Job.prototype.step = function (budget) {
-    var t0 = now(), n, end;
+    var t0 = now(), n, end, s0, g;
     while (!this.done) {
+      s0 = now(); g = this.stage === 0 ? 0 : this.stage <= 2 ? 1 : 2;
       if (this.stage === 0) this.init();
       else if (this.stage === 1) {
         n = this.list.length; end = Math.min(n, this.i + 4);
@@ -456,6 +467,7 @@
         this.frac = 0.9 + 0.1 * this.i / this.n;
         if (this.i >= this.n) { this.obj.geometry.attributes.color.needsUpdate = true; this.rho = this.bin = this.bmax = null; this.finish(this.obj); }
       }
+      this.tm[g] += now() - s0;
       if (now() - t0 >= budget) break;
     }
     this.ms += now() - t0;
@@ -487,7 +499,7 @@
       if (!Q || typeof Q.warmReady !== 'function') return;          // 28번이 옛 버전 — 진입 때 만듦
       if (!Q.warmReady()) {                                           // 가닥 미리계산이 끝나길 기다림
         if (pre.tries === 0 && Q.scheduleWarm) Q.scheduleWarm();
-        if (++pre.tries < 240) schedulePre(500);
+        if (++pre.tries < 600) schedulePre(D.prePollMs || 500);
         return;
       }
       pre.job = new Job(sig, model);
@@ -502,9 +514,90 @@
       try { if (job.obj) recycle(job.obj.userData._bufs); } catch (e) {}
       dropPre(); return schedulePre();
     }
-    pre.obj = job.obj; pre.ready = true; S.preBuiltMs = job.ms;
+    pre.obj = job.obj; pre.ready = true; S.preBuiltMs = job.ms; noteBuild(job, '미리');
     console.log(TAG + ' 3D 헤어 미리 만들기 끝 — 가닥 ' + (job.count || 0) + '개 · 선분 ' + (job.obj ? job.pos.length / 6 : 0) +
       '개 · 일한 시간 ' + Math.round(job.ms) + 'ms (조금씩 나눠서) · 3D 결과보기는 이걸 받아 씁니다');
+  }
+
+  function noteBuild(job, how) {
+    S.lastBuild = { how: how, ms: Math.round(job.ms), calc: Math.round(job.tm[0]), write: Math.round(job.tm[1]), shade: Math.round(job.tm[2]), strands: job.count || 0 };
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────
+   * ④ 3D 진입 때 남은 일을 나눠서 하기 (진행률 표시)
+   *   순서: 가닥 미리계산의 남은 부분(28번 warmStep) → 헤어 만들기 Job의 남은 부분.
+   *   둘 다 조정 화면에서 하던 일을 그대로 이어서 하는 것이라 결과는 같습니다.
+   *   돌려주는 값(Promise): true = 헤어가 준비됨 · false = 못 함(원래 경로가 진입 때 만듦)
+   * ────────────────────────────────────────────────────────────────────── */
+  D.prepare3D = function (onProg) {
+    return new Promise(function (res) {
+      var model, sig, Q = W.GYEOL_3D;
+      try {
+        if (!D.on || !D.pre3D || !canStream()) return res(false);
+        model = neutral(); if (!model) return res(false);
+        sig = fullSig(model);
+      } catch (e) { return res(false); }
+      if (pre.sig === sig && pre.ready) return res(true);
+      if (pre.sig !== sig) { dropPre(); pre.sig = sig; }
+      if (preTimer) { clearTimeout(preTimer); preTimer = null; }
+      var job = pre.job, phaseA = !job && Q && typeof Q.warmStep === 'function';
+      if (job) S.preResume++; else S.preCold++;
+      var slice = D.entrySliceMs || 40;
+      function prog(f) { if (onProg) try { onProg(f); } catch (e) {} }
+      function tick() {
+        try {
+          if (pre.sig !== sig) return res(false);                       // 그 사이 다른 쪽에서 버림
+          if (phaseA) {                                                 // 가닥 계산의 남은 부분
+            var f = Q.warmStep(slice);
+            if (f < 1) { prog(0.45 * f); return setTimeout(tick, 0); }
+            phaseA = false;
+          }
+          if (!job) { job = pre.job || new Job(sig, model); pre.job = job; }
+          if (pre.job !== job) return res(false);
+          job.step(slice);
+          prog(0.45 + 0.55 * job.frac);
+          if (!job.done) return setTimeout(tick, 0);
+          pre.job = null; pre.obj = job.obj; pre.ready = true; pre.entryMade = true;
+          S.preBuiltMs = job.ms; noteBuild(job, '진입(나눠서)');
+          res(true);
+        } catch (e) {
+          console.warn(TAG + ' 진입 때 나눠서 만들기 중단 — 원래 방식으로 만듭니다', e);
+          dropPre(); res(false);
+        }
+      }
+      tick();
+    });
+  };
+
+  var origSetup = W.setupModel3DScreen, setupGen = 0;
+  if (typeof origSetup === 'function') {
+    W.setupModel3DScreen = function () {
+      var self = this, args = arguments, gen = ++setupGen;
+      if (!D.on || !D.pre3D || !D.entryProgress || !neutral()) return origSetup.apply(self, args);
+      try { if (pre.ready && pre.sig === fullSig(neutral())) return origSetup.apply(self, args); } catch (e) { return origSetup.apply(self, args); }
+      var shown = false, sub = null, lastPct = -1;
+      try {
+        if (typeof showAI === 'function') { showAI('3D 헤어 만드는 중…', '0%'); shown = true; sub = document.getElementById('aiOverlaySub'); }
+      } catch (e) {}
+      function hide() { if (shown) { shown = false; try { hideAI(); } catch (e) {} } }
+      return new Promise(function (r) {                                  // 안내를 먼저 그리고 시작
+        var raf = W.requestAnimationFrame || function (f) { return setTimeout(f, 16); };
+        raf(function () { setTimeout(r, 0); });
+      }).then(function () {
+        return D.prepare3D(function (f) {
+          var pct = Math.round(f * 100);
+          if (sub && pct !== lastPct) { lastPct = pct; sub.textContent = pct + '%'; }
+        });
+      }).then(function () {
+        hide();
+        if (gen !== setupGen || scr() !== 'model3d') return;             // 그 사이 나갔거나 다시 들어옴
+        return origSetup.apply(self, args);
+      }, function (e) {
+        hide();
+        if (gen !== setupGen || scr() !== 'model3d') return;
+        return origSetup.apply(self, args);
+      });
+    };
   }
 
   var origBuild = W.buildAdjustedHair3DObject;
@@ -515,7 +608,10 @@
       if (!model) return origBuild.apply(this, arguments);
       try {
         var sig = fullSig(model), t0 = now(), how;
-        if (pre.sig === sig && pre.ready) { S.preHit++; how = '미리 만든 것 받아 씀'; }
+        if (pre.sig === sig && pre.ready) {
+          if (pre.entryMade) how = '진입 때 나눠서 만든 것'; else { S.preHit++; how = '미리 만든 것 받아 씀'; }
+          pre.entryMade = false;
+        }
         else {
           if (pre.sig !== sig) { dropPre(); pre.sig = sig; }
           var job = pre.job;
@@ -523,7 +619,7 @@
           else { job = new Job(sig, model); S.preCold++; how = '지금 만듦'; }
           pre.job = null;
           job.step(Infinity);
-          pre.obj = job.obj; pre.ready = true;
+          pre.obj = job.obj; pre.ready = true; noteBuild(job, '진입(한 번에)');
         }
         freeFull(model);   // 3D 화면에 있는 동안은 전체 가닥 기억이 필요 없음(조정 화면으로 돌아오면 28번이 다시 채움)
         console.log(TAG + ' 3D 헤어 — ' + how + ' · ' + Math.round(now() - t0) + 'ms');
@@ -547,14 +643,15 @@
   D.status = function () {
     return { drag: { deferred: S.deferred, lastRenderMs: Math.round(S.lastRenderMs), live: !(S.lastRenderMs > D.dragLiveMs) },
       pruned: S.pruned, released3D: S.released,
-      pre3D: { state: preLine(), hit: S.preHit, resumed: S.preResume, cold: S.preCold, fallback: S.preFallback, builtMs: Math.round(S.preBuiltMs) } };
+      pre3D: { state: preLine(), hit: S.preHit, resumed: S.preResume, cold: S.preCold, fallback: S.preFallback, builtMs: Math.round(S.preBuiltMs), last: S.lastBuild } };
   };
   var ppl = W.perfPanelLines;
   if (typeof ppl === 'function') W.perfPanelLines = function () {
     var L = ppl.apply(this, arguments) || [];
     return L.concat(['[폰 다이어트] 드래그 중 미룬 그림 ' + S.deferred + '회(직전 렌더 ' + Math.round(S.lastRenderMs) + 'ms) · 옛 캐시 버림 ' + S.pruned +
       '벌 · 전체 가닥 기억 비움 ' + S.freedFull + '회 · 버퍼 재사용 ' + S.bufReuse + '회 · 3D 장면 반납 ' + S.released + '회 · 3D 미리 만들기: ' + preLine() + ' (받아 씀 ' + S.preHit + ' / 이어서 ' + S.preResume +
-      ' / 진입 때 만듦 ' + S.preCold + ' / 원래 방식 ' + S.preFallback + ')']);
+      ' / 진입 때 만듦 ' + S.preCold + ' / 원래 방식 ' + S.preFallback + ')' +
+      (S.lastBuild ? ' · 마지막 헤어 만들기[' + S.lastBuild.how + '] ' + S.lastBuild.ms + 'ms = 가닥 계산 ' + S.lastBuild.calc + ' + 가닥 쓰기 ' + S.lastBuild.write + ' + 음영 ' + S.lastBuild.shade + ' (가닥 ' + S.lastBuild.strands + '개)' : '')]);
   };
 
   console.log(TAG + ' 설치 — 드래그 중 그림 미루기 · 옛 캐시 즉시 버림 · 3D 나갈 때 장면 반납 · 3D 헤어 미리 만들기. 끄기 MOBILE_DIET.on=false · 상태 MOBILE_DIET.status()');
