@@ -1,0 +1,511 @@
+/* ==========================================================================
+ * 42-regrow.js — 원본 결 → 3D: 뿌리부터 다시 기르기 (4장 버전 · v1)
+ *
+ * 로드 위치: index.html 맨 끝(41-original-asis.js 다음).
+ *
+ * 왜 (2026-10-03 실험):
+ *   지금 방식은 사진에서 결을 따라 그은 긴 선 하나를 머리카락 한 올로 보고, 선의 위쪽 끝을 뿌리로 삼아
+ *   머리 겉면에 걸쳐 놓습니다. 그래서
+ *     · 뿌리가 크라운에 몰립니다(폼파두르: crown 68% · front 1% · temple 0% — 두피 면적은 crown 28%).
+ *     · 짧은 옆머리를 정수리에서 난 9cm 가닥이 덮습니다(버섯 갓 모양).
+ *     · 4면의 결을 하나로 합친 방향장을 따르게 하면 오히려 꺾입니다(꺾임 25° → 37°).
+ *   긴 머리에서도 가닥이 얼굴을 가로지르고 지그재그였습니다.
+ *
+ * 무엇을:
+ *   ① 뿌리 — 마네킹과 같은 방식으로 두피 전체에 심습니다(실측 뿌리밀도 × 셀 면적).
+ *   ② 방향 — 4면을 미리 합치지 않습니다. 가닥이 한 걸음 나갈 때마다 지금 자리를 각 사진에 되비춰
+ *      그 픽셀의 결 방향을 직접 읽고, 그 자리를 정면으로 보는 사진일수록 크게 칩니다.
+ *      (그 사진 각도에서 보면 2D 원본 결과 같은 방향으로 흐르게 됩니다.)
+ *   ③ 두께 — 두피에서 바깥으로 얼마나 떠 있는가는 사진 윤곽선으로 잽니다: 두피 셀마다 법선을 따라
+ *      나가며 "이 점이 모든 사진에서 머리 영역 안인가"를 물어 처음 벗어나는 높이를 두께로 씁니다.
+ *      어느 사진도 판정 못 하는 자리(정옆·뒤 일부)는 이웃 셀 값으로 메웁니다(추정).
+ *   ④ 길이 — 사진의 머리 영역을 벗어나면 멈춥니다. 상한은 섹션별 원본 가닥 길이.
+ *   ⑤ 방향의 앞뒤 — 2D 결은 선이라 앞뒤가 없습니다. 기본은 아래(중력) 쪽, 수평이면 뒤쪽·가르마 바깥쪽.
+ *      그쪽으로 머리가 없으면(앞 헤어라인 아래 = 이마) 반대로 기릅니다 → 세운 앞머리.
+ *   ⑥ 두피를 벗어나면(목덜미 아래·얼굴 쪽) 자유 낙하 구간 — 결을 따르되 중력을 섞고 두상 안으로 못 들어가게.
+ *
+ * 화면: 조정 화면 [다시 기르기] 버튼. 켜면 마네킹은 꺼지고 [원본 3D 그대로]가 켜집니다
+ *       (조정 엔진의 기본 컬·커트가 섞이지 않은 결과를 먼저 보기 위해서).
+ *       진단 줄 [다시 기르기]에 뿌리 분포·길이·꺾임·추정 비율·멈춘 이유가 찍힙니다.
+ *
+ * 한계(v1): 측면 사진이 28~51°라 정옆·뒤의 두께는 추정이 섞입니다. 속머리(겉에서 안 보이는 층)는 겉 결을 따릅니다.
+ *
+ * 끄기: 버튼 또는 REGROW.on=false 후 REGROW.refresh()
+ * ========================================================================== */
+(function () {
+  'use strict';
+  var W = window, TAG = '[다시 기르기]';
+  var G = W.REGROW = Object.assign({
+    on: false, button: true,
+    step: 0.022,        // 한 걸음(모델 단위 ≈ 0.4cm)
+    maxSteps: 44,
+    minFacing: 0.22,    // 이 사진이 그 자리를 이만큼은 정면으로 봐야 결을 읽음
+    minCoh: 0.08,       // 결 또렷함 하한
+    layerLo: 0.2, layerHi: 1.0,   // 가닥이 두께의 몇 %까지 뜨는가(가닥마다 무작위)
+    tMax: 0.45,         // 두께 재기 상한(모델 단위 ≈ 9cm)
+    tStep: 0.012,
+    outlineCos: 0.3,    // 두께는 그 자리를 거의 옆에서(법선·카메라축 각 73° 이상) 보는 사진으로만 잼
+    tFloor: 0.012,      // 두께 바닥(≈ 0.25cm)
+    lenPct: 0.8, lenMul: 1.15,    // 길이 상한 = 섹션별 원본 가닥 길이의 80백분위 × 1.15
+    tapPx: 4,           // 머리 영역 판정 여유(800px 기준)
+    gravity: 0.25,      // 두피 밖 구간에서 중력을 섞는 비율
+    sliceMs: 30,
+    seed: 20261003
+  }, W.REGROW || {});
+  var S = G.stats = null;
+
+  function now() { try { return performance.now(); } catch (e) { return Date.now(); } }
+  function q(a, f) { if (!a.length) return NaN; var b = a.slice().sort(function (x, y) { return x - y; }); return b[Math.min(b.length - 1, Math.floor(b.length * f))]; }
+  function n1(v) { return isFinite(v) ? (Math.round(v * 10) / 10).toFixed(1) : '?'; }
+
+  /* ────────────────────────────────────────────────────────────────────────
+   * 만들기
+   * ────────────────────────────────────────────────────────────────────── */
+  function makeBuilder(photo) {
+    var probe = (photo.occ && photo.occ.probe) || (state.hairOcc3D && state.hairOcc3D.probe) || null;
+    if (!probe || !probe.cams || !probe.cams.length) return { err: '점유 프로브 없음(HAIR_OCC3D가 꺼져 있거나 사진 정보가 없음)' };
+    var roots = photo.roots, grid = photo.grid;
+    if (!roots || !roots.ok || !grid) return { err: '뿌리밀도/격자 없음' };
+    var Es = getScalpEllipsoid(), Eh = getHeadEllipsoid(), CY = photo.CY, yTop = photo.yTop;
+    if (!Es || !(Es.a > 0) || !(Es.b > 0) || !(Es.c > 0)) return { err: '두피 타원체 없음' };
+    var NT = roots.NT, NP = roots.NP, NC = NT * NP;
+    var OFF = (typeof EST_OFFSCALP !== 'undefined') ? EST_OFFSCALP : 3;
+    var bald = (typeof MANNEQUIN !== 'undefined' && MANNEQUIN.baldDen) || 0.08;
+    var a2 = Es.a * Es.a, b2 = Es.b * Es.b, c2 = Es.c * Es.c;
+    var yBody = CY - 0.7 * Es.b;
+
+    // 사진별 카메라
+    var cams = [];
+    probe.cams.forEach(function (c) {
+      var mi = state.hairMasks && state.hairMasks[c.angle];
+      if (!mi || !c.smp || !(c.iw > 0) || !(c.ih > 0)) return;
+      var mw = mi.maskW || mi.w, mh = mi.maskH || mi.h;
+      cams.push({ angle: c.angle, R: c.R, cx: c.cx, s: c.s, sy: c.sy, crownY: c.crownY, smp: c.smp, iw: c.iw, ih: c.ih,
+        ori: mi.orientation || null, mw: mw, kx: mw / mi.w, ky: mh / mi.h, tap: Math.max(2, G.tapPx * c.iw / 800) });
+    });
+    if (!cams.length) return { err: '쓸 수 있는 사진 없음' };
+
+    // 난수(결정적)
+    var seed = G.seed >>> 0;
+    function rnd() { seed = (seed + 0x6D2B79F5) >>> 0; var t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
+
+    function onSurf(p) {     // 중심에서 본 방향 그대로 두피 타원체 면으로
+      var x = p.x, y = p.y - CY, z = p.z, k = 1 / Math.sqrt(Math.max(1e-12, x * x / a2 + y * y / b2 + z * z / c2));
+      return { x: x * k, y: CY + y * k, z: z * k };
+    }
+    function normalAt(p) {
+      var x = p.x / a2, y = (p.y - CY) / b2, z = p.z / c2, l = Math.hypot(x, y, z) || 1;
+      return { x: x / l, y: y / l, z: z / l };
+    }
+    function cellOf(p) {     // 두피 격자 칸(행=극각, 열=방위)
+      var cy = Math.max(-1, Math.min(1, (p.y - CY) / Es.b)), ph = Math.acos(cy), th = Math.atan2(p.x / Es.a, p.z / Es.c);
+      var r = Math.max(0, Math.min(NP - 1, Math.floor(ph / Math.PI * NP)));
+      var c = Math.floor((th + Math.PI) / (2 * Math.PI) * NT); c = ((c % NT) + NT) % NT;
+      return r * NT + c;
+    }
+    function offScalp(i) { return !!(roots.est && roots.est[i] === OFF); }
+
+    var pj = { ix: 0, iy: 0, z: 0 };
+    function proj(cam, p) {
+      var R = cam.R, x = p.x, y = p.y - CY, z = p.z;
+      pj.ix = (R[0] * x + R[1] * y + R[2] * z) / cam.s + cam.cx;
+      pj.iy = cam.crownY + (yTop - ((R[3] * x + R[4] * y + R[5] * z) + CY)) / cam.sy;
+      pj.z = R[6] * x + R[7] * y + R[8] * z;
+      return pj;
+    }
+    function hairAt(cam, ix, iy) {
+      var t = cam.tap, s = cam.smp;
+      return s.at(ix, iy) > 0 || s.at(ix - t, iy) > 0 || s.at(ix + t, iy) > 0 || s.at(ix, iy - t) > 0 || s.at(ix, iy + t) > 0;
+    }
+    function behindSkull(cam, p) {   // p에서 카메라 쪽으로 가는 길이 두개골에 막히는가
+      var R = cam.R, dx = R[6], dy = R[7], dz = R[8], x = p.x, y = p.y - CY, z = p.z;
+      var A = dx * dx / a2 + dy * dy / b2 + dz * dz / c2, B = 2 * (x * dx / a2 + y * dy / b2 + z * dz / c2), C = x * x / a2 + y * y / b2 + z * z / c2 - 0.96;
+      var D = B * B - 4 * A * C;
+      if (D <= 0) return false;
+      return (-B + Math.sqrt(D)) / (2 * A) > 1e-4;
+    }
+    /* 이 점이 사진들에서 머리 영역인가. 1 = 머리 · 0 = 아님 · -1 = 어느 사진도 판정 못 함 */
+    function vote(p) {
+      var yes = 0, no = 0, i, cam, o;
+      for (i = 0; i < cams.length; i++) {
+        cam = cams[i]; o = proj(cam, p);
+        if (o.ix < 0 || o.iy < 0 || o.ix >= cam.iw || o.iy >= cam.ih) continue;
+        if (o.z < 0) {                               // 카메라 반대편
+          if (p.y < yBody) continue;                 // 목·어깨에 가려졌을 수 있음(몸은 모델에 없음)
+          if (behindSkull(cam, p)) continue;         // 두개골에 가림
+        }
+        if (hairAt(cam, o.ix, o.iy)) yes++; else no++;
+      }
+      return yes + no === 0 ? -1 : (yes >= no ? 1 : 0);
+    }
+
+    /* 두께 재기 전용 — 그 자리를 "옆에서"(윤곽선으로) 보는 사진만 묻는다.
+       정면으로 보는 사진은 깊이를 못 재서 항상 "머리"라고 답하고, 비스듬히 보는 사진은 늦게 알아챈다
+       (법선과 카메라 축이 이루는 각이 90°에서 벗어난 만큼 두께를 크게 잰다). 1 머리 · 0 아님 · -1 물어볼 사진 없음 */
+    function voteOutline(p, n) {
+      var yes = 0, i, cam, o, R, ncz;
+      for (i = 0; i < cams.length; i++) {
+        cam = cams[i]; R = cam.R;
+        ncz = R[6] * n.x + R[7] * n.y + R[8] * n.z;
+        if (Math.abs(ncz) > G.outlineCos) continue;
+        o = proj(cam, p);
+        if (o.ix < 0 || o.iy < 0 || o.ix >= cam.iw || o.iy >= cam.ih) continue;
+        if (o.z < 0) { if (p.y < yBody) continue; if (behindSkull(cam, p)) continue; }
+        if (hairAt(cam, o.ix, o.iy)) yes++; else return 0;
+      }
+      return yes ? 1 : -1;
+    }
+
+    /* 그 자리의 결 방향을 사진들에서 직접 읽어 3D 접선 방향으로. ref가 있으면 그쪽 부호로 맞춤 */
+    function flow(p, n, ref) {
+      var ax = 0, ay = 0, az = 0, wsum = 0, i, cam, o, R, ncx, ncy, ncz, sm, pol, dX, dY, dZ, mx, my, mz, l, w, dot;
+      for (i = 0; i < cams.length; i++) {
+        cam = cams[i]; if (!cam.ori) continue;
+        R = cam.R;
+        ncz = R[6] * n.x + R[7] * n.y + R[8] * n.z;
+        if (ncz < G.minFacing) continue;
+        o = proj(cam, p);
+        if (o.ix < 0 || o.iy < 0 || o.ix >= cam.iw || o.iy >= cam.ih) continue;
+        if (!(cam.smp.at(o.ix, o.iy) > 0)) continue;
+        sm = sampleOrientation(cam.ori, o.ix * cam.kx, cam.mw, o.iy * cam.ky);
+        if (!sm || !(sm.coherence >= G.minCoh)) continue;
+        ncx = R[0] * n.x + R[1] * n.y + R[2] * n.z; ncy = R[3] * n.x + R[4] * n.y + R[5] * n.z;
+        dX = Math.cos(sm.angle) * cam.s; dY = -Math.sin(sm.angle) * cam.sy;
+        dZ = -(dX * ncx + dY * ncy) / ncz;
+        l = Math.hypot(dX, dY); if (Math.abs(dZ) > 3 * l) dZ = (dZ < 0 ? -3 : 3) * l;      // 스치는 각에서 깊이가 터지는 것 막음
+        mx = R[0] * dX + R[3] * dY + R[6] * dZ; my = R[1] * dX + R[4] * dY + R[7] * dZ; mz = R[2] * dX + R[5] * dY + R[8] * dZ;
+        l = Math.hypot(mx, my, mz); if (!(l > 1e-12)) continue;
+        mx /= l; my /= l; mz /= l;
+        if (ref) dot = mx * ref.x + my * ref.y + mz * ref.z;
+        else if (wsum > 0) dot = mx * ax + my * ay + mz * az;
+        else { pol = 0; try { pol = flowPolarityFor(sm.angle, sm); } catch (e) {} dot = pol < 0 ? -1 : 1; }
+        if (dot < 0) { mx = -mx; my = -my; mz = -mz; }
+        w = ncz * ncz * sm.coherence;
+        ax += w * mx; ay += w * my; az += w * mz; wsum += w;
+      }
+      l = Math.hypot(ax, ay, az);
+      return l > 1e-9 ? { x: ax / l, y: ay / l, z: az / l } : null;
+    }
+    function tangent(d, n) {
+      var k = d.x * n.x + d.y * n.y + d.z * n.z, x = d.x - k * n.x, y = d.y - k * n.y, z = d.z - k * n.z, l = Math.hypot(x, y, z);
+      return l > 1e-6 ? { x: x / l, y: y / l, z: z / l } : null;
+    }
+
+    /* ③ 두께 지도 */
+    var T = new Float32Array(NC), known = new Uint8Array(NC), tStat = { measured: 0, filled: 0, zero: 0 };
+    function buildThickness() {
+      var r, c, i, ph, th, sp, n, h, miss, last, v, got;
+      for (r = 0; r < NP; r++) for (c = 0; c < NT; c++) {
+        i = r * NT + c;
+        if (offScalp(i)) { T[i] = 0; known[i] = 2; continue; }
+        ph = (r + 0.5) / NP * Math.PI; th = (c + 0.5) / NT * 2 * Math.PI - Math.PI;
+        sp = { x: Es.a * Math.sin(ph) * Math.sin(th), y: CY + Es.b * Math.cos(ph), z: Es.c * Math.sin(ph) * Math.cos(th) };
+        n = normalAt(sp); miss = 0; last = 0; got = false;
+        for (h = G.tStep; h <= G.tMax; h += G.tStep) {
+          v = voteOutline({ x: sp.x + n.x * h, y: sp.y + n.y * h, z: sp.z + n.z * h }, n);
+          if (v === 0) { if (++miss >= 2) { got = true; break; } }
+          else { if (v === 1) last = h; miss = 0; }
+        }
+        if (got) { T[i] = last; known[i] = 1; tStat.measured++; if (last <= 0) tStat.zero++; }
+        else known[i] = 0;                                   // 끝까지 안 벗어남 = 이 방향은 사진이 두께를 못 잼
+      }
+      // 못 잰 칸은 잰 이웃으로 메움
+      var it, any, tmp = new Float32Array(NC), k2 = new Uint8Array(NC), dr, dc, rr, cc, j, sum, cnt;
+      for (it = 0; it < 64; it++) {
+        any = false; tmp.set(T); k2.set(known);
+        for (r = 0; r < NP; r++) for (c = 0; c < NT; c++) {
+          i = r * NT + c; if (known[i] !== 0) continue;
+          sum = 0; cnt = 0;
+          for (dr = -1; dr <= 1; dr++) for (dc = -1; dc <= 1; dc++) {
+            rr = r + dr; if (rr < 0 || rr >= NP) continue; cc = ((c + dc) % NT + NT) % NT; j = rr * NT + cc;
+            if (known[j] === 1) { sum += T[j]; cnt++; }
+          }
+          if (cnt) { tmp[i] = sum / cnt; k2[i] = 1; tStat.filled++; any = true; }
+        }
+        T.set(tmp); known.set(k2);
+        if (!any) break;
+      }
+      var fb = Math.max(G.tFloor, (Eh.a - Es.a + Eh.c - Es.c) / 2);
+      for (i = 0; i < NC; i++) if (known[i] === 0) { T[i] = fb; known[i] = 1; tStat.filled++; }
+      // 한 번 고르게(두피 안 칸끼리만)
+      tmp.set(T);
+      for (r = 0; r < NP; r++) for (c = 0; c < NT; c++) {
+        i = r * NT + c; if (known[i] !== 1) continue;
+        sum = 0; cnt = 0;
+        for (dr = -1; dr <= 1; dr++) for (dc = -1; dc <= 1; dc++) {
+          rr = r + dr; if (rr < 0 || rr >= NP) continue; cc = ((c + dc) % NT + NT) % NT; j = rr * NT + cc;
+          if (known[j] === 1) { var wgt = (dr === 0 && dc === 0) ? 4 : (dr === 0 || dc === 0) ? 2 : 1; sum += T[j] * wgt; cnt += wgt; }
+        }
+        tmp[i] = cnt ? sum / cnt : T[i];
+      }
+      for (i = 0; i < NC; i++) if (known[i] === 1) T[i] = Math.max(G.tFloor, Math.min(G.tMax, tmp[i]));
+    }
+    function thickAt(p) { var i = cellOf(p); return known[i] === 1 ? T[i] : G.tFloor; }
+
+    /* 길이 상한·색 팔레트 — 원본 사진 가닥에서 */
+    var lenBy = {}, colBy = {}, allLen = [];
+    photo.strands.forEach(function (s) {
+      var k = s.sec || 'crown', p = s.pts, L = 0, j;
+      for (j = 1; j < p.length; j++) L += Math.hypot(p[j].x - p[j - 1].x, p[j].y - p[j - 1].y, p[j].z - p[j - 1].z);
+      (lenBy[k] || (lenBy[k] = [])).push(L); allLen.push(L);
+      if (s.color) { var cl = colBy[k] || (colBy[k] = []); if (cl.length < 400) cl.push(s.color); }
+    });
+    var capAll = q(allLen, G.lenPct) * G.lenMul, cap = {};
+    Object.keys(lenBy).forEach(function (k) { cap[k] = q(lenBy[k], G.lenPct) * G.lenMul; });
+    function capFor(sec) { return cap[sec] > 0 ? cap[sec] : (capAll > 0 ? capAll : 0.5); }
+
+    /* 뿌리 예산(마네킹과 같은 식: 밀도 × 셀 면적) */
+    var yStep = (grid.yTopH - grid.yBot) / (grid.NY - 1);
+    function bucketOfY(y) { return Math.min(grid.NY - 1, Math.max(0, Math.round((grid.yTopH - y) / yStep))); }
+    var areas = null;
+    try { areas = headSurfaceCellAreas(grid.hullW, grid.hullD, bucketOfY, CY, roots.b, NT, NP); } catch (e) { areas = null; }
+    var wgt = new Float64Array(NC), wTot = 0, i;
+    for (i = 0; i < NC; i++) {
+      if (offScalp(i)) continue;
+      var den = roots.den[i]; if (!(den > bald)) continue;
+      wgt[i] = den * (areas ? areas[i] : 1); wTot += wgt[i];
+    }
+    if (!(wTot > 0)) return { err: '뿌리밀도가 전부 0' };
+    var total = photo.strands.length;
+
+    var st = { n: 0, stub: 0, skipped: 0, steps: 0, est: 0, stopMask: 0, stopCap: 0, stopMax: 0, free: 0, flipped: 0,
+      len: [], kink: [], sec: {} };
+    var down = { x: 0, y: -1, z: 0 };
+
+    function room(F, n, dt, sgn) {       // 그 방향으로 몇 걸음까지 머리가 있나(짧게 내다봄)
+      var k, f = F, nn = n, cnt = 0, d = { x: dt.x * sgn, y: dt.y * sgn, z: dt.z * sgn }, t2;
+      for (k = 0; k < 4; k++) {
+        f = onSurf({ x: f.x + d.x * G.step, y: f.y + d.y * G.step, z: f.z + d.z * G.step });
+        nn = normalAt(f);
+        if (vote({ x: f.x + nn.x * G.tFloor, y: f.y + nn.y * G.tFloor, z: f.z + nn.z * G.tFloor }) === 0) break;
+        cnt++;
+        t2 = tangent(d, nn); if (t2) d = t2;
+      }
+      return cnt;
+    }
+
+    function grow(cellIdx) {
+      var r = cellIdx / NT | 0, c = cellIdx % NT;
+      var ph = (r + rnd()) / NP * Math.PI, th = (c + rnd()) / NT * 2 * Math.PI - Math.PI;
+      var F = { x: Es.a * Math.sin(ph) * Math.sin(th), y: CY + Es.b * Math.cos(ph), z: Es.c * Math.sin(ph) * Math.cos(th) };
+      var n = normalAt(F), u = G.layerLo + (G.layerHi - G.layerLo) * rnd();
+      var sec = null; try { sec = resolveSection3D(F, CY, Es.b); } catch (e) {} sec = sec || 'crown';
+      var Lcap = capFor(sec), ramp = Math.max(0.03, Math.min(0.12, 0.25 * Lcap));
+      var pts = [{ x: F.x, y: F.y, z: F.z }], P = F, s = 0, prev = null, miss = 0, k, d, dt, fl, estSteps = 0, steps = 0, free = false, stop = 'max';
+
+      // 첫 방향과 앞뒤
+      fl = flow(F, n, null);
+      d = fl || down; if (!fl) estSteps++;
+      dt = tangent(d, n) || tangent({ x: 0.3, y: -1, z: 0.2 }, n) || { x: 1, y: 0, z: 0 };
+      var sgn;
+      if (Math.abs(dt.y) > 0.3) sgn = dt.y < 0 ? 1 : -1;                    // 아래쪽
+      else if (Math.abs(dt.z) > 0.3) sgn = dt.z < 0 ? 1 : -1;               // 수평이면 뒤쪽
+      else sgn = dt.x * F.x >= 0 ? 1 : -1;                                  // 옆으로 흐르면 가운데 선 바깥쪽
+      var r1 = room(F, n, dt, sgn);
+      if (r1 < 2) { var r2 = room(F, n, dt, -sgn); if (r2 > r1) { sgn = -sgn; st.flipped++; } }
+      prev = { x: dt.x * sgn, y: dt.y * sgn, z: dt.z * sgn };
+
+      for (k = 0; k < G.maxSteps; k++) {
+        steps++;
+        if (!free) {
+          // 두피 위 구간: 발은 두피면을 따라, 몸은 그 위 두께만큼 떠서
+          fl = flow(P, n, prev); if (!fl) estSteps++;
+          dt = tangent(fl || prev, n) || prev;
+          var F2 = onSurf({ x: F.x + dt.x * G.step, y: F.y + dt.y * G.step, z: F.z + dt.z * G.step });
+          if (offScalp(cellOf(F2))) { free = true; st.free++; prev = dt; k--; steps--; continue; }
+          var n2 = normalAt(F2), s2 = s + G.step, h2 = u * thickAt(F2) * Math.min(1, s2 / ramp);
+          var P2 = { x: F2.x + n2.x * h2, y: F2.y + n2.y * h2, z: F2.z + n2.z * h2 };
+          if (vote(P2) === 0) { if (++miss >= 2) { stop = 'mask'; break; } } else miss = 0;
+          pts.push(P2); F = F2; n = n2; P = P2; s = s2; prev = tangent(dt, n2) || dt;
+        } else {
+          // 두피 밖 구간: 결 + 중력, 두상 안으로는 못 들어감
+          var rr = Math.hypot(P.x, P.z), nc = rr > 1e-6 ? { x: P.x / rr, y: 0, z: P.z / rr } : n;
+          fl = flow(P, nc, prev); if (!fl) estSteps++;
+          d = fl || prev;
+          var gx = d.x * (1 - G.gravity), gy = d.y * (1 - G.gravity) - G.gravity, gz = d.z * (1 - G.gravity), gl = Math.hypot(gx, gy, gz) || 1;
+          d = { x: gx / gl, y: gy / gl, z: gz / gl };
+          var Q = { x: P.x + d.x * G.step, y: P.y + d.y * G.step, z: P.z + d.z * G.step };
+          try { Q = ellipsoidPushOut(Q, Es.a * 1.02, Es.b * 1.02, Es.c * 1.02, CY); } catch (e) {}
+          if (vote(Q) === 0) { if (++miss >= 2) { stop = 'mask'; break; } } else miss = 0;
+          pts.push({ x: Q.x, y: Q.y, z: Q.z }); P = Q; s += G.step; prev = d;
+        }
+        if (s >= Lcap) { stop = 'cap'; break; }
+      }
+      if (miss > 0 && pts.length > 1 + miss) pts.length -= miss;       // 머리 영역 밖으로 나간 꼬리는 버림
+      else if (miss > 0 && pts.length > 2) pts.length = 2;
+      if (pts.length < 2) { st.skipped++; return null; }
+      if (pts.length < 3) st.stub++;
+      if (stop === 'mask') st.stopMask++; else if (stop === 'cap') st.stopCap++; else st.stopMax++;
+      st.steps += steps; st.est += estSteps;
+
+      var view = 'front'; try { view = viewOfRoot(F0(pts)); } catch (e) {}
+      var pal = colBy[sec] || colBy.crown, color = pal && pal.length ? pal[rnd() * pal.length | 0] : '#2B2320', colors = null;
+      try { colors = bakeStrandColors3D(pts, photo, view, color, null); } catch (e) { colors = null; }
+      return { pts: pts, sec: sec, color: color, colors: colors, srcAngle: view, rootFacing: 0, regrown: true };
+    }
+    function F0(p) { return p[0]; }
+
+    var out = [], cell = 0, carry = 0, t0 = now(), thickDone = false;
+    return {
+      total: total,
+      /* budget ms만큼 일하고 진행률(0~1) 반환. 1이면 끝 */
+      step: function (budget) {
+        var t = now();
+        if (!thickDone) { buildThickness(); thickDone = true; return 0.08; }
+        while (cell < NC && now() - t < budget) {
+          if (wgt[cell]) {
+            carry += wgt[cell] / wTot * total;
+            var nRoots = Math.floor(carry); carry -= nRoots;
+            for (var j = 0; j < nRoots; j++) {
+              var sdd = grow(cell);
+              if (!sdd) continue;
+              out.push(sdd); st.n++;
+              st.sec[sdd.sec] = (st.sec[sdd.sec] || 0) + 1;
+              if (st.n % 7 === 0) {            // 통계 표본
+                var p = sdd.pts, L = 0, turn = 0, turns = 0, i2;
+                for (i2 = 1; i2 < p.length; i2++) {
+                  var ax = p[i2].x - p[i2 - 1].x, ay = p[i2].y - p[i2 - 1].y, az = p[i2].z - p[i2 - 1].z, al = Math.hypot(ax, ay, az);
+                  L += al;
+                  if (i2 > 1 && al > 1e-9) {
+                    var bx = p[i2 - 1].x - p[i2 - 2].x, by = p[i2 - 1].y - p[i2 - 2].y, bz = p[i2 - 1].z - p[i2 - 2].z, bl = Math.hypot(bx, by, bz);
+                    if (bl > 1e-9) { turn += Math.acos(Math.max(-1, Math.min(1, (ax * bx + ay * by + az * bz) / (al * bl)))); turns++; }
+                  }
+                }
+                st.len.push(L); if (turns) st.kink.push(turn / turns * 180 / Math.PI);
+              }
+            }
+          }
+          cell++;
+        }
+        return cell >= NC ? 1 : 0.08 + 0.92 * cell / NC;
+      },
+      finish: function () {
+        var cm = 1; try { cm = modelCmPerUnit() || 1; } catch (e) {}
+        var tv = []; for (var k = 0; k < NC; k++) if (known[k] === 1 && !offScalp(k)) tv.push(T[k] * cm);
+        S = G.stats = {
+          ms: Math.round(now() - t0), n: st.n, stub: st.stub, skipped: st.skipped, sec: st.sec,
+          lenMed: q(st.len, 0.5) * cm, lenP90: q(st.len, 0.9) * cm, kinkMed: q(st.kink, 0.5), kinkP90: q(st.kink, 0.9),
+          estPct: st.steps ? st.est / st.steps * 100 : 0, stopMask: st.stopMask, stopCap: st.stopCap, stopMax: st.stopMax, free: st.free, flipped: st.flipped,
+          tMed: q(tv, 0.5), tP90: q(tv, 0.9), tMeasured: tStat.measured, tFilled: tStat.filled, tZero: tStat.zero, cells: NC,
+          cams: cams.map(function (c) { return c.angle; }).join(',')
+        };
+        return { strands: out, viewCal: photo.viewCal, yTop: photo.yTop, CY: photo.CY, field: photo.field || null, occ: photo.occ || null,
+          grid: photo.grid, roots: photo.roots, mannequin: false, regrown: true };
+      }
+    };
+  }
+
+  /* ────────────────────────────────────────────────────────────────────────
+   * 모델 바꿔 끼우기 — state.hair3Dneutral이 (마네킹이 꺼져 있고 REGROW.on이면) 다시 기른 모델을 돌려줌
+   * ────────────────────────────────────────────────────────────────────── */
+  var desc = null;
+  try { desc = Object.getOwnPropertyDescriptor(state, 'hair3Dneutral'); } catch (e) {}
+  if (!desc || !desc.get || !desc.set || !desc.configurable) { console.warn(TAG + ' state.hair3Dneutral 접근자를 못 찾아 건너뜀'); return; }
+  G.model = null; G.src = null; G.building = false; G.lastErr = null;
+  Object.defineProperty(state, 'hair3Dneutral', {
+    enumerable: true, configurable: true,
+    get: function () {
+      var m = desc.get.call(this);
+      if (!G.on || !m || m.mannequin) return m;
+      if (G.model && G.src === this._hair3Dneutral) return G.model;
+      if (!G.building && this._hair3Dneutral && G.failedFor !== this._hair3Dneutral) setTimeout(G.build, 0);   // 사진 모델이 새로 만들어졌으면 다시 기름
+      return m;
+    },
+    set: function (v) { G.model = null; G.src = null; desc.set.call(this, v); }
+  });
+
+  function redraw() {
+    try { if (typeof ADJ_CACHE !== 'undefined' && ADJ_CACHE.bump) ADJ_CACHE.bump(); } catch (e) {}
+    try { if (typeof combRefresh === 'function') combRefresh(); else if (typeof renderAdjustFrame === 'function') renderAdjustFrame(); } catch (e) { console.warn(TAG + ' 다시 그리기 실패', e); }
+  }
+  G.build = function (cb) {
+    if (typeof cb !== 'function') cb = null;
+    if (G.building) return;
+    var photo = state._hair3Dneutral;
+    if (!photo || !photo.strands || !photo.strands.length) { if (cb) cb(false); return; }
+    try { if (typeof NEUTRAL_BUILD !== 'undefined' && NEUTRAL_BUILD.running) { setTimeout(function () { G.build(cb); }, 300); return; } } catch (e) {}
+    var B;
+    try { B = makeBuilder(photo); } catch (e) { B = { err: String(e && e.message || e) }; console.warn(TAG + ' 준비 실패', e); }
+    if (!B || B.err) {
+      G.lastErr = B ? B.err : '?'; G.failedFor = photo;
+      console.warn(TAG + ' 못 기름 — ' + G.lastErr + ' · 사진 가닥을 그대로 씁니다');
+      if (cb) cb(false); return;
+    }
+    G.building = true; G.lastErr = null;
+    var sub = null;
+    try { if (typeof showAI === 'function') { showAI('뿌리부터 다시 기르는 중…', '0%'); sub = document.getElementById('aiOverlaySub'); } } catch (e) {}
+    (function tick() {
+      var f;
+      try { f = B.step(G.sliceMs); }
+      catch (e) {
+        G.building = false; G.lastErr = String(e && e.message || e); G.failedFor = photo;
+        console.warn(TAG + ' 기르다 실패 — 사진 가닥을 그대로 씁니다', e);
+        try { if (typeof hideAI === 'function') hideAI(); } catch (x) {}
+        if (cb) cb(false); return;
+      }
+      if (sub) sub.textContent = Math.round(f * 100) + '%';
+      if (f < 1) return setTimeout(tick, 0);
+      var model = null;
+      try { model = B.finish(); } catch (e) { G.lastErr = String(e && e.message || e); }
+      G.building = false;
+      try { if (typeof hideAI === 'function') hideAI(); } catch (x) {}
+      if (!model || !model.strands.length || state._hair3Dneutral !== photo) {
+        if (!model || !model.strands.length) { G.failedFor = photo; G.lastErr = G.lastErr || '가닥 0개'; console.warn(TAG + ' 결과가 비었습니다 — 사진 가닥을 그대로 씁니다'); }
+        if (cb) cb(false); return;
+      }
+      G.model = model; G.src = photo;
+      console.log(G.lines().join('\n'));
+      redraw();
+      if (cb) cb(true);
+    })();
+  };
+
+  var btn = null;
+  function syncBtn() { if (btn) { btn.textContent = '다시 기르기 ' + (G.on ? 'ON' : 'OFF'); btn.classList.toggle('on', !!G.on); } }
+  G.refresh = function () { syncBtn(); if (G.on && !G.model) G.build(); else redraw(); };
+  G.toggle = function () {
+    G.on = !G.on;
+    if (G.on) {
+      try { if (typeof MANNEQUIN !== 'undefined' && MANNEQUIN.on && typeof toggleMannequin === 'function') toggleMannequin(); } catch (e) {}
+      try { if (W.ORIG_ASIS && !W.ORIG_ASIS.on) W.ORIG_ASIS.toggle(); } catch (e) {}      // 조정 엔진이 안 섞인 결과부터 봄
+      G.failedFor = null;
+    }
+    console.log(TAG + ' ' + (G.on ? '켬' : '끔 — 사진 가닥으로 되돌림'));
+    G.refresh();
+  };
+  var origMq = W.mannequinReset;
+  if (typeof origMq === 'function') W.mannequinReset = function () {
+    if (G.on) { G.on = false; syncBtn(); }
+    return origMq.apply(this, arguments);
+  };
+  if (G.button) try {
+    var bar = document.querySelector('#screen-adjust .mode-bar');
+    if (bar) {
+      btn = document.createElement('button');
+      btn.id = 'regrowBtn'; btn.type = 'button';
+      btn.title = '두피 전체에 뿌리를 심고, 사진의 결을 직접 읽어 가닥을 다시 기릅니다';
+      btn.addEventListener('click', function () { G.toggle(); });
+      bar.appendChild(btn); syncBtn();
+    }
+  } catch (e) {}
+
+  G.lines = function () {
+    var s = G.stats, L = ['[다시 기르기] ' + (G.on ? '켜짐' : '꺼짐') + (G.building ? ' · 만드는 중' : '') + (G.model && G.src === state._hair3Dneutral ? ' · 모델 있음' : ' · 모델 없음') + (G.lastErr ? ' · ⚠ ' + G.lastErr : '')];
+    if (!s) return L;
+    var tot = s.n || 1, secs = Object.keys(s.sec).map(function (k) { return k + ' ' + Math.round(s.sec[k] / tot * 100) + '%'; }).join(' · ');
+    L.push('  가닥 ' + s.n + '개(짧은 그루터기 ' + s.stub + ' · 못 심음 ' + s.skipped + ') · ' + s.ms + 'ms · 사진 ' + s.cams);
+    L.push('  뿌리 분포 — ' + secs);
+    L.push('  길이 ' + n1(s.lenMed) + '/' + n1(s.lenP90) + 'cm(중앙값/p90) · 꺾임 ' + n1(s.kinkMed) + '°/' + n1(s.kinkP90) + '° · 결을 사진에서 못 읽고 이어 간 걸음 ' + n1(s.estPct) + '%');
+    L.push('  멈춘 이유 — 머리 영역 밖 ' + s.stopMask + ' · 길이 상한 ' + s.stopCap + ' · 걸음 수 상한 ' + s.stopMax + ' · 두피 밖으로 나가 늘어뜨린 가닥 ' + s.free + ' · 반대로 기른 뿌리(아래쪽에 머리 없음) ' + s.flipped);
+    L.push('  두께(두피→머리 겉면) 중앙값 ' + n1(s.tMed) + 'cm · p90 ' + n1(s.tP90) + 'cm · 윤곽선으로 잰 칸 ' + s.tMeasured + ' · 이웃으로 메운 칸(추정) ' + s.tFilled + ' · 두께 0으로 잰 칸 ' + s.tZero + ' / 전체 ' + s.cells);
+    return L;
+  };
+  var ppl = W.perfPanelLines;
+  if (typeof ppl === 'function') W.perfPanelLines = function () {
+    var L = ppl.apply(this, arguments) || [];
+    try { L = L.concat(G.lines()); } catch (e) {}
+    return L;
+  };
+
+  console.log(TAG + ' 설치 — 조정 화면의 [다시 기르기] 버튼. 콘솔: REGROW.toggle() · REGROW.lines().join("\\n")');
+})();
