@@ -57,7 +57,7 @@
     release3D: true,     // ③ 3D 화면 나갈 때 장면 반납
     freeFull: true       // ③ 3D 화면에 들어갈 때 전체 가닥 기억 비움
   }, W.MOBILE_DIET || {});
-  var S = D.stats = { freedFull: 0, bufReuse: 0, deferred: 0, lastRenderMs: 0, pruned: 0, released: 0, preHit: 0, preResume: 0, preCold: 0, preFallback: 0, preBuiltMs: 0, lastBuild: null };
+  var S = D.stats = { freedFull: 0, bufReuse: 0, deferred: 0, lastRenderMs: 0, pruned: 0, released: 0, preHit: 0, preResume: 0, preCold: 0, preFallback: 0, preBuiltMs: 0, lastBuild: null, lastShow: null };
 
   function now() { try { return performance.now(); } catch (e) { return Date.now(); } }
   function scr() { try { return currentScreen; } catch (e) { return ''; } }
@@ -586,21 +586,28 @@
       return r;
     };
   });
+  /* 돌려주는 Promise는 장면이 실제로 보이는 순간에 풀립니다(38번의 "걸린 시간"이 보일 때까지의 시간이 되도록). */
   function runSetup(self, args, gen, onShown) {
     faceP = decalP = null;
-    var p = origSetup.apply(self, args), g = null;
+    var t0 = now(), p = origSetup.apply(self, args), g = null;
     function finish() { if (onShown) try { onShown(); } catch (e) {} }
     try { g = D.showTogether && typeof model3D !== 'undefined' && model3D && model3D.initialized ? model3D.headGroup : null; } catch (e) { g = null; }
     if (!g) { Promise.resolve(p).then(finish, finish); return p; }
     g.visible = false;                                                   // 첫 프레임이 그려지기 전(같은 작업 안)
-    var done = false;
-    function show() { if (done) return; done = true; clearTimeout(guard); g.visible = true; finish(); }
-    var guard = setTimeout(show, 6000);
-    function settle(x) { return x && typeof x.then === 'function' ? x.then(function () {}, function () {}) : Promise.resolve(); }
-    return Promise.resolve(p).then(function (v) {
-      settle(faceP).then(function () { return settle(decalP); }).then(function () { setTimeout(show, 0); });
-      return v;
-    }, function (e) { show(); throw e; });
+    return new Promise(function (res, rej) {
+      var done = false, tSetup = null;
+      function show(byGuard) {
+        if (done) return; done = true; clearTimeout(guard); g.visible = true;
+        S.lastShow = { setupMs: tSetup == null ? null : Math.round(tSetup), shownMs: Math.round(now() - t0), guard: !!byGuard };
+        finish(); res();
+      }
+      var guard = setTimeout(function () { show(true); }, 6000);
+      function settle(x) { return x && typeof x.then === 'function' ? x.then(function () {}, function () {}) : Promise.resolve(); }
+      Promise.resolve(p).then(function () {
+        tSetup = now() - t0;
+        settle(faceP).then(function () { return settle(decalP); }).then(function () { setTimeout(function () { show(false); }, 0); });
+      }, function (e) { show(false); rej(e); });
+    });
   }
   if (typeof origSetup === 'function') {
     W.setupModel3DScreen = function () {
@@ -681,7 +688,8 @@
     return L.concat(['[폰 다이어트] 드래그 중 미룬 그림 ' + S.deferred + '회(직전 렌더 ' + Math.round(S.lastRenderMs) + 'ms) · 옛 캐시 버림 ' + S.pruned +
       '벌 · 전체 가닥 기억 비움 ' + S.freedFull + '회 · 버퍼 재사용 ' + S.bufReuse + '회 · 3D 장면 반납 ' + S.released + '회 · 3D 미리 만들기: ' + preLine() + ' (받아 씀 ' + S.preHit + ' / 이어서 ' + S.preResume +
       ' / 진입 때 만듦 ' + S.preCold + ' / 원래 방식 ' + S.preFallback + ')' +
-      (S.lastBuild ? ' · 마지막 헤어 만들기[' + S.lastBuild.how + '] ' + S.lastBuild.ms + 'ms = 가닥 계산 ' + S.lastBuild.calc + ' + 가닥 쓰기 ' + S.lastBuild.write + ' + 음영 ' + S.lastBuild.shade + ' (가닥 ' + S.lastBuild.strands + '개)' : '')]);
+      (S.lastBuild ? ' · 마지막 헤어 만들기[' + S.lastBuild.how + '] ' + S.lastBuild.ms + 'ms = 가닥 계산 ' + S.lastBuild.calc + ' + 가닥 쓰기 ' + S.lastBuild.write + ' + 음영 ' + S.lastBuild.shade + ' (가닥 ' + S.lastBuild.strands + '개)' : '') +
+      (S.lastShow ? ' · 3D 장면 붙이기 ' + S.lastShow.setupMs + 'ms → 한꺼번에 보임 ' + S.lastShow.shownMs + 'ms' + (S.lastShow.guard ? ' ⚠ 6초 안전장치로 보임(얼굴 붙기를 못 기다림)' : '') : '')]);
   };
 
   console.log(TAG + ' 설치 — 드래그 중 그림 미루기 · 옛 캐시 즉시 버림 · 3D 나갈 때 장면 반납 · 3D 헤어 미리 만들기. 끄기 MOBILE_DIET.on=false · 상태 MOBILE_DIET.status()');

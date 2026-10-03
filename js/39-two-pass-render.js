@@ -33,13 +33,18 @@
  *   · 모든 뷰가 같은 6,000가닥을 쓰므로 뷰를 바꿀 때 가닥을 새로 계산하지 않습니다.
  *   · 미니 3D도 같은 6,000가닥 · 빠른 그림은 그 절반(3,000).
  *
- * 끄기: TWO_PASS.on=false · TWO_PASS.alignMini=false · 2D 가닥 원래대로 TWO_PASS.strands2D=0 · 빠른 그림 비율 TWO_PASS.frac
+ * (2026-10-03g) 빠른 그림(절반만 먼저 까는 단계) 끔 — 사용자 요청. 값이 바뀌면 바로 완성 그림 한 번만 그립니다.
+ *   실측(6,000가닥): 빠른 그림 627ms + 완성 그림 926ms = 1553ms. 끄면 중간 단계 없이 완성 그림만(약 1.0~1.5초).
+ *   2D 6,000가닥 고정과 미니 3D 맞추기는 그대로입니다. 다시 켜기: TWO_PASS.quickPass=true
+ *
+ * 끄기: TWO_PASS.on=false · TWO_PASS.alignMini=false · 2D 가닥 원래대로 TWO_PASS.strands2D=0 · 빠른 그림 TWO_PASS.quickPass / 비율 TWO_PASS.frac
  * ========================================================================== */
 (function () {
   'use strict';
   var W = window, TAG = '[두 번 그리기]';
   var TP = W.TWO_PASS = Object.assign({
     on: true,
+    quickPass: false,  // 빠른 그림(가닥 일부로 먼저 그리기) — 2026-10-03g부터 기본 끔
     frac: 1 / 2,       // 빠른 그림의 가닥 비율 (2026-10-03e: 2D 목표를 1배로 낮추면서 1/3 → 1/2)
     strands2D: 6000,   // 2D가 계산하는 가닥 수(머리 전체) — 0이면 원래 방식(사진 원본 가닥 수 × 1.5)
     mul2D: 0,          // (예전 방식) 2D 목표 배율 — strands2D가 0일 때만 쓰임 · 0이면 건드리지 않음
@@ -137,7 +142,7 @@
     if (!sig) return origProj.apply(this, arguments);
     var t0 = now(), r;
 
-    var wantQuick = !forceFull && fullSig !== null && sig !== fullSig && missMs > TP.minMs && TP.frac > 0 && TP.frac < 1;
+    var wantQuick = TP.quickPass && !forceFull && fullSig !== null && sig !== fullSig && missMs > TP.minMs && TP.frac > 0 && TP.frac < 1;
     if (wantQuick) {
       if (ourStride != null) {                          // 간격을 1/frac배로(절반이면 2배) — 완성 그림 가닥의 부분집합
         H.stride = ourStride / TP.frac;
@@ -181,10 +186,10 @@
   var ppl = W.perfPanelLines;
   if (typeof ppl === 'function') W.perfPanelLines = function () {
     var L = ppl.apply(this, arguments) || [];
-    return L.concat(['[두 번 그리기] 빠른 그림 ' + TP.quick + '회(직전 ' + Math.round(TP.lastQuickMs) + 'ms) · 완성 그림 ' + TP.full + '회(직전 ' + Math.round(TP.lastFullMs) +
+    return L.concat(['[2D 그리기] 빠른 그림 ' + (TP.quickPass ? '켜짐 ' : '꺼짐 ') + TP.quick + '회(직전 ' + Math.round(TP.lastQuickMs) + 'ms) · 완성 그림 ' + TP.full + '회(직전 ' + Math.round(TP.lastFullMs) +
       'ms) · 값 바뀐 뒤 완성까지 ' + (isFinite(missMs) ? Math.round(missMs) + 'ms' : '측정 전') +
       (ourStride != null ? ' · 2D ' + TP.strands2D + '가닥 고정(간격 ' + ourStride.toFixed(2) + ')' : ' · 2D 목표 ×' + HAIR3D_RENDER.targetMul) + (typeof MINI3D !== 'undefined' ? ' · 미니3D 상한 ' + Math.round(MINI3D.maxStrands) + '가닥' : '') + (TP.on ? '' : ' · 꺼짐')]);
   };
 
-  console.log(TAG + ' 설치 — 값이 바뀌면 가닥 절반으로 먼저 그리고, 손이 쉬면 전체로 다시 그림. 끄기 TWO_PASS.on=false · 상태 TWO_PASS.status()');
+  console.log(TAG + ' 설치 — 2D 가닥 수 고정 · 미니 3D 가닥 맞춤 · 빠른 그림은 기본 꺼짐(TWO_PASS.quickPass=true로 켬). 끄기 TWO_PASS.on=false · 상태 TWO_PASS.status()');
 })();
