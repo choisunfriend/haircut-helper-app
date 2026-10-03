@@ -679,6 +679,16 @@
     if (same !== n || a.length !== b.length) { Q.memo = false; Q.check += ' → 기억 끔(원래 방식으로 계산)'; }
   }
   Q.scheduleWarm = scheduleWarm;
+  /* 37번(3D 미리 만들기)이 묻는 창구 — 지금 상태의 가닥이 전부 미리 계산돼 있나 */
+  Q.warmReady = function () {
+    try {
+      if (!Q.memo || !Q.prewarm) return false;
+      var model = state.hair3Dneutral;
+      if (!model || !model.strands) return false;
+      var psig = strandSig(model);
+      return !!psig && psig === M.sig && psig === warmSig && warmIdx >= model.strands.length;
+    } catch (e) { return false; }
+  };
   var raf2 = G.renderAdjustFrame;
   if (typeof raf2 === 'function') G.renderAdjustFrame = function () { var r = raf2.apply(this, arguments); scheduleWarm(); return r; };
   var nav2 = G.navTo;

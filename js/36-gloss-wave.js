@@ -184,9 +184,24 @@
     return true;
   }
 
+  // 가닥 하나 다듬기 (입력은 안 바꿈). 37번(3D 미리 만들기)이 가닥 단위로 나눠 부를 때도 이 함수를 씀.
+  function glossStrand(sd, cfg, cpu, st) {
+    if (!sd || !sd.pts || sd.pts.length < 5) return sd;
+    var c = Object.assign({}, sd);
+    try {
+      if (cfg.shape !== false) c.pts = smoothPts(sd.pts, cfg, cpu, st);
+      if (sd.colors) c.colors = smoothColors(sd.colors, cfg);
+    } catch (e) { c = sd; }
+    return c;
+  }
+  G.strand = glossStrand;
+  G.cfg = activeCfg;
+  G.cpu = cmPerUnit;
+
   wrap('computeAdjustedHair3DStrands', function (orig) {
     return function () {
       var res = orig.apply(this, arguments);
+      if (G._defer) return res;   // 37번이 가닥 단위로 직접 다듬을 때 — 여기서 통째 복사본을 만들지 않음
       var cfg = activeCfg();
       if (!cfg || !Array.isArray(res) || !res.length) return res;
       var key = JSON.stringify(cfg) + '|' + ver;
@@ -195,14 +210,7 @@
       var t0 = performance.now(), cpu = cmPerUnit(), st = { n: 0, dev: 0 };
       var out = new Array(res.length);
       for (var i = 0; i < res.length; i++) {
-        var sd = res[i];
-        if (!sd || !sd.pts || sd.pts.length < 5) { out[i] = sd; continue; }
-        var c = Object.assign({}, sd);
-        try {
-          if (cfg.shape !== false) c.pts = smoothPts(sd.pts, cfg, cpu, st);
-          if (sd.colors) c.colors = smoothColors(sd.colors, cfg);
-        } catch (e) { c = sd; }
-        out[i] = c;
+        out[i] = glossStrand(res[i], cfg, cpu, st);
       }
       memo.set(res, { key: key, out: out });
       if (!G._logged || G._logged !== key) {
