@@ -538,7 +538,9 @@
 (function () {
   'use strict';
   var G = window, F = G.STYLE_FAST;
-  var Q = G.GYEOL_3D = { memo: true, prewarm: true, fastColor: true, skipDiag: true, bakeMemo: true,
+  /* (2026-10-03f) bakeMemo 끔 — 실측에서 적중 0/100,588 (37번이 가닥을 하나씩 새로 만들어 쓰면서 같은 점 배열이
+     다시 오는 일이 없어짐). 저장만 하고 못 꺼내 쓰던 메모리·시간을 없앰. 되돌리기 GYEOL_3D.bakeMemo=true */
+  var Q = G.GYEOL_3D = { memo: true, prewarm: true, fastColor: true, skipDiag: true, bakeMemo: false,
     warmDelayMs: 400,   // (2026-10-03c) 900 → 400: 실측에서 미리 만들기가 끝나기 전에 3D로 넘어가는 일이 대부분이었음
     hits: 0, miss: 0, warmDone: 0, warmTotal: 0, bakeHits: 0, bakeMiss: 0 };
   function now() { try { return performance.now(); } catch (e) { return Date.now(); } }

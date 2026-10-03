@@ -27,7 +27,13 @@
  *     2D는 그중 가려진 것을 빼고 그리므로 미니 3D 쪽이 더 많습니다.
  *   · 빠른 그림 비율은 1/3 → 1/2 (가닥 수는 예전 빠른 그림과 같은 약 2,400개).
  *
- * 끄기: TWO_PASS.on=false · TWO_PASS.alignMini=false · 2D 가닥 원래대로 TWO_PASS.mul2D=0 · 빠른 그림 비율 TWO_PASS.frac
+ * (2026-10-03f) 2D 가닥 6,000개 고정 (사용자 요청 — 1배는 너무 휑했음)
+ *   · 목표 배율 대신 "머리 전체에서 6,000가닥"으로 고정합니다(저사양 판정 기기만 · 예전 약 7,000).
+ *     1배 방식은 뷰마다 가닥 수가 달라서(정면 4,900 · 후면 3,000) 후면이 특히 비어 보였습니다.
+ *   · 모든 뷰가 같은 6,000가닥을 쓰므로 뷰를 바꿀 때 가닥을 새로 계산하지 않습니다.
+ *   · 미니 3D도 같은 6,000가닥 · 빠른 그림은 그 절반(3,000).
+ *
+ * 끄기: TWO_PASS.on=false · TWO_PASS.alignMini=false · 2D 가닥 원래대로 TWO_PASS.strands2D=0 · 빠른 그림 비율 TWO_PASS.frac
  * ========================================================================== */
 (function () {
   'use strict';
@@ -35,7 +41,8 @@
   var TP = W.TWO_PASS = Object.assign({
     on: true,
     frac: 1 / 2,       // 빠른 그림의 가닥 비율 (2026-10-03e: 2D 목표를 1배로 낮추면서 1/3 → 1/2)
-    mul2D: 1.0,        // 2D 목표 가닥 = 사진 원본 가닥 수 × 이 값 (원래 1.5 · 0이면 건드리지 않음)
+    strands2D: 6000,   // 2D가 계산하는 가닥 수(머리 전체) — 0이면 원래 방식(사진 원본 가닥 수 × 1.5)
+    mul2D: 0,          // (예전 방식) 2D 목표 배율 — strands2D가 0일 때만 쓰임 · 0이면 건드리지 않음
     mulLowOnly: true,  // 저사양 판정 기기에서만 낮춤
     miniK: 1,          // 미니 3D 솎는 간격 = 2D 간격 × 이 값 (1 = 2D가 계산한 가닥 전부)
     settleMs: 350,     // 빠른 그림 뒤 이만큼 조용하면 완성 그림
@@ -65,12 +72,21 @@
   var missMs = Infinity;     // 값이 바뀐 뒤의 완성 그림 한 번에 걸리는 시간(측정 전에는 느리다고 봄)
   var forceFull = false, timer = null, finger = false, quickCost = 0;
   var lastWasQuick = false, miniBase = null;
-  var baseMul = HAIR3D_RENDER.targetMul;
+  var baseMul = HAIR3D_RENDER.targetMul, baseStride = HAIR3D_RENDER.stride, ourStride = null;
+  /* 2D 가닥 수 정하기. ourStride가 숫자면 우리가 간격을 직접 정한 상태(6,000가닥 고정). */
   function applyMul() {
     try {
-      var low = false;
+      var low = false, n = 0, H = HAIR3D_RENDER;
       try { low = typeof isLowMemDevice === 'function' && isLowMemDevice(); } catch (e) {}
-      HAIR3D_RENDER.targetMul = (TP.on && TP.mul2D > 0 && (low || !TP.mulLowOnly)) ? TP.mul2D : baseMul;
+      try { n = state.hair3Dneutral && state.hair3Dneutral.strands ? state.hair3Dneutral.strands.length : 0; } catch (e) {}
+      var use = TP.on && (low || !TP.mulLowOnly);
+      if (use && TP.strands2D > 0 && n > 0 && baseStride == null) {
+        ourStride = Math.max(1, n / TP.strands2D);
+        H.stride = ourStride; H.targetMul = baseMul;
+      } else {
+        if (ourStride != null) { H.stride = baseStride; ourStride = null; }
+        H.targetMul = (use && TP.mul2D > 0) ? TP.mul2D : baseMul;
+      }
     } catch (e) {}
   }
   applyMul();
@@ -116,16 +132,21 @@
   W.projectHair3DToView = function () {
     var H = HAIR3D_RENDER;
     applyMul();
-    if (!TP.on || !inAdjust || scr() !== 'adjust' || H.stride != null || H.targetStrands != null) return origProj.apply(this, arguments);
+    if (!TP.on || !inAdjust || scr() !== 'adjust' || (H.stride != null && ourStride == null) || H.targetStrands != null) return origProj.apply(this, arguments);
     var sig = stateSig();
     if (!sig) return origProj.apply(this, arguments);
     var t0 = now(), r;
 
     var wantQuick = !forceFull && fullSig !== null && sig !== fullSig && missMs > TP.minMs && TP.frac > 0 && TP.frac < 1;
     if (wantQuick) {
-      var keep = H.targetMul;
-      H.targetMul = (keep || 1) * TP.frac;
-      try { r = origProj.apply(this, arguments); } finally { H.targetMul = keep; }
+      if (ourStride != null) {                          // 간격을 1/frac배로(절반이면 2배) — 완성 그림 가닥의 부분집합
+        H.stride = ourStride / TP.frac;
+        try { r = origProj.apply(this, arguments); } finally { H.stride = ourStride; }
+      } else {
+        var keep = H.targetMul;
+        H.targetMul = (keep || 1) * TP.frac;
+        try { r = origProj.apply(this, arguments); } finally { H.targetMul = keep; }
+      }
       TP.quick++; TP.lastQuickMs = quickCost = now() - t0;
       lastWasQuick = true;
       schedule();
@@ -162,7 +183,7 @@
     var L = ppl.apply(this, arguments) || [];
     return L.concat(['[두 번 그리기] 빠른 그림 ' + TP.quick + '회(직전 ' + Math.round(TP.lastQuickMs) + 'ms) · 완성 그림 ' + TP.full + '회(직전 ' + Math.round(TP.lastFullMs) +
       'ms) · 값 바뀐 뒤 완성까지 ' + (isFinite(missMs) ? Math.round(missMs) + 'ms' : '측정 전') +
-      ' · 2D 목표 ×' + HAIR3D_RENDER.targetMul + (typeof MINI3D !== 'undefined' ? ' · 미니3D 상한 ' + Math.round(MINI3D.maxStrands) + '가닥' : '') + (TP.on ? '' : ' · 꺼짐')]);
+      (ourStride != null ? ' · 2D ' + TP.strands2D + '가닥 고정(간격 ' + ourStride.toFixed(2) + ')' : ' · 2D 목표 ×' + HAIR3D_RENDER.targetMul) + (typeof MINI3D !== 'undefined' ? ' · 미니3D 상한 ' + Math.round(MINI3D.maxStrands) + '가닥' : '') + (TP.on ? '' : ' · 꺼짐')]);
   };
 
   console.log(TAG + ' 설치 — 값이 바뀌면 가닥 절반으로 먼저 그리고, 손이 쉬면 전체로 다시 그림. 끄기 TWO_PASS.on=false · 상태 TWO_PASS.status()');
