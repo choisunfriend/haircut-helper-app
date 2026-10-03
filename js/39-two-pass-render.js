@@ -7,23 +7,40 @@
  *   renderFrame 12549ms/10회 ≈ projectHair3DToView 11358ms/9회 — 그리기의 거의 전부가 헤어 투영이고,
  *   그 안에서 가닥을 약 7,400개(모델 21,920개 중 솎기 2.97) 새로 계산합니다(가닥 하나 ≈ 0.11ms).
  *
- * 고침: 값이 바뀐 직후에는 가닥의 1/3만으로 먼저 그리고(빠른 그림), 손이 쉬면 전체로 다시 그립니다(완성 그림).
+ * 고침: 값이 바뀐 직후에는 가닥의 일부(처음엔 1/3, 지금은 1/2)만으로 먼저 그리고(빠른 그림), 손이 쉬면 전체로 다시 그립니다(완성 그림).
  *   · 완성 그림은 지금과 똑같습니다 — 가닥 수 목표(HAIR3D_RENDER.targetMul)를 빠른 그림 동안만 잠깐 낮춥니다.
- *   · 솎는 간격이 정확히 3배라 빠른 그림에 쓴 가닥은 완성 그림에도 그대로 들어갑니다.
+ *   · 솎는 간격이 정확히 정수배라 빠른 그림에 쓴 가닥은 완성 그림에도 그대로 들어갑니다.
  *     28번의 가닥별 기억 덕분에 완성 그림은 나머지 2/3만 계산합니다 → 버리는 계산이 없습니다.
  *   · 값이 그대로일 때(뷰 전환 등)와 충분히 빠른 기기(완성 그림이 minMs 이하)는 예전처럼 바로 완성 그림.
  *   · 슬라이더를 잡고 있는 동안에는 완성 그림을 미룹니다(손가락이 멈춰 버리지 않게).
  *
- * 끄기: TWO_PASS.on=false · 빠른 그림 비율 TWO_PASS.frac (기본 1/3 · 숱이 너무 비어 보이면 0.5)
+ * (2026-10-03d) 미니 3D가 열려 있을 때:
+ *   · 빠른 그림 뒤에는 미니 3D를 갱신하지 않고, 완성 그림 뒤에 한 번만 갱신합니다.
+ *   · 미니 3D의 솎는 간격을 2D의 정확히 3배로 맞춥니다(약 2,500 → 2,400가닥). 간격이 어긋나 있어서
+ *     미니 3D가 2D와 다른 가닥을 따로 계산하고 있었습니다(실측 미니3D 321~498ms). 맞추면 2D가 계산한 가닥을 그대로 씁니다.
+ *
+ * (2026-10-03e) 2D 가닥 수 줄이기 + 미니 3D 늘리기 (사용자 요청)
+ *   · 2D 목표 가닥을 사진 원본의 1.5배 → 1배로 (저사양 판정 기기만). 계산하는 가닥 약 7,000 → 4,800개.
+ *     화면에서 머리 폭이 140px 남짓인데 0.43px 굵기 선을 5,500개 넘게 그리고 있었습니다.
+ *     이건 보여 주는 순서가 아니라 일 자체가 1/3 줄어드는 것입니다. 모든 기기에 걸려면 TWO_PASS.mulLowOnly=false.
+ *   · 미니 3D는 2D와 같은 간격으로(miniK=1) — 2D가 계산한 가닥을 전부 그대로 씁니다(약 2,500 → 4,800가닥, 추가 계산 없음).
+ *     2D는 그중 가려진 것을 빼고 그리므로 미니 3D 쪽이 더 많습니다.
+ *   · 빠른 그림 비율은 1/3 → 1/2 (가닥 수는 예전 빠른 그림과 같은 약 2,400개).
+ *
+ * 끄기: TWO_PASS.on=false · TWO_PASS.alignMini=false · 2D 가닥 원래대로 TWO_PASS.mul2D=0 · 빠른 그림 비율 TWO_PASS.frac
  * ========================================================================== */
 (function () {
   'use strict';
   var W = window, TAG = '[두 번 그리기]';
   var TP = W.TWO_PASS = Object.assign({
     on: true,
-    frac: 1 / 3,       // 빠른 그림의 가닥 비율
+    frac: 1 / 2,       // 빠른 그림의 가닥 비율 (2026-10-03e: 2D 목표를 1배로 낮추면서 1/3 → 1/2)
+    mul2D: 1.0,        // 2D 목표 가닥 = 사진 원본 가닥 수 × 이 값 (원래 1.5 · 0이면 건드리지 않음)
+    mulLowOnly: true,  // 저사양 판정 기기에서만 낮춤
+    miniK: 1,          // 미니 3D 솎는 간격 = 2D 간격 × 이 값 (1 = 2D가 계산한 가닥 전부)
     settleMs: 350,     // 빠른 그림 뒤 이만큼 조용하면 완성 그림
     minMs: 250,        // 완성 그림이 이보다 빠른 기기는 두 번 그리지 않음
+    alignMini: true,   // 미니 3D 솎는 간격을 2D 간격의 정수배로 맞춤
     quick: 0, full: 0, lastQuickMs: 0, lastFullMs: 0
   }, W.TWO_PASS || {});
 
@@ -47,6 +64,35 @@
   var fullSig = null;        // 마지막 완성 그림의 상태
   var missMs = Infinity;     // 값이 바뀐 뒤의 완성 그림 한 번에 걸리는 시간(측정 전에는 느리다고 봄)
   var forceFull = false, timer = null, finger = false, quickCost = 0;
+  var lastWasQuick = false, miniBase = null;
+  var baseMul = HAIR3D_RENDER.targetMul;
+  function applyMul() {
+    try {
+      var low = false;
+      try { low = typeof isLowMemDevice === 'function' && isLowMemDevice(); } catch (e) {}
+      HAIR3D_RENDER.targetMul = (TP.on && TP.mul2D > 0 && (low || !TP.mulLowOnly)) ? TP.mul2D : baseMul;
+    } catch (e) {}
+  }
+  applyMul();
+
+  function alignMini() {
+    try {
+      if (typeof MINI3D === 'undefined') return;
+      if (miniBase == null) miniBase = MINI3D.maxStrands;
+      if (!TP.on || !TP.alignMini) { MINI3D.maxStrands = miniBase; return; }
+      var d = W._lastStrandDiag && W._lastStrandDiag[state.currentViewAngle];
+      if (!d || !(d.stride >= 1) || !(d.total > 0) || !(miniBase > 0)) return;
+      var k = Math.max(1, Math.round(+TP.miniK || 1));                  // 2D 간격의 정수배
+      MINI3D.maxStrands = d.total / (d.stride * k);
+    } catch (e) {}
+  }
+  var origMini = W.scheduleHair3DRefresh;
+  if (typeof origMini === 'function') {
+    W.scheduleHair3DRefresh = function () {
+      if (TP.on && lastWasQuick) return;             // 미니 3D는 완성 그림 뒤에 한 번
+      return origMini.apply(this, arguments);
+    };
+  }
 
   W.renderAdjustFrame = function () {
     inAdjust = true;
@@ -69,6 +115,7 @@
 
   W.projectHair3DToView = function () {
     var H = HAIR3D_RENDER;
+    applyMul();
     if (!TP.on || !inAdjust || scr() !== 'adjust' || H.stride != null || H.targetStrands != null) return origProj.apply(this, arguments);
     var sig = stateSig();
     if (!sig) return origProj.apply(this, arguments);
@@ -80,6 +127,7 @@
       H.targetMul = (keep || 1) * TP.frac;
       try { r = origProj.apply(this, arguments); } finally { H.targetMul = keep; }
       TP.quick++; TP.lastQuickMs = quickCost = now() - t0;
+      lastWasQuick = true;
       schedule();
       return r;
     }
@@ -92,7 +140,8 @@
     var d = now() - t0;
     TP.full++; TP.lastFullMs = d;
     if (changed) missMs = d + (forced ? quickCost : 0);  // 값이 바뀐 뒤의 완성 그림만 "느린지" 판정에 씀
-    fullSig = sig; quickCost = 0;
+    fullSig = sig; quickCost = 0; lastWasQuick = false;
+    alignMini();
     if (timer) { clearTimeout(timer); timer = null; }
     return r;
   };
@@ -112,8 +161,9 @@
   if (typeof ppl === 'function') W.perfPanelLines = function () {
     var L = ppl.apply(this, arguments) || [];
     return L.concat(['[두 번 그리기] 빠른 그림 ' + TP.quick + '회(직전 ' + Math.round(TP.lastQuickMs) + 'ms) · 완성 그림 ' + TP.full + '회(직전 ' + Math.round(TP.lastFullMs) +
-      'ms) · 값 바뀐 뒤 완성까지 ' + (isFinite(missMs) ? Math.round(missMs) + 'ms' : '측정 전') + (TP.on ? '' : ' · 꺼짐')]);
+      'ms) · 값 바뀐 뒤 완성까지 ' + (isFinite(missMs) ? Math.round(missMs) + 'ms' : '측정 전') +
+      ' · 2D 목표 ×' + HAIR3D_RENDER.targetMul + (typeof MINI3D !== 'undefined' ? ' · 미니3D 상한 ' + Math.round(MINI3D.maxStrands) + '가닥' : '') + (TP.on ? '' : ' · 꺼짐')]);
   };
 
-  console.log(TAG + ' 설치 — 값이 바뀌면 가닥 1/3로 먼저 그리고, 손이 쉬면 전체로 다시 그림. 끄기 TWO_PASS.on=false · 상태 TWO_PASS.status()');
+  console.log(TAG + ' 설치 — 값이 바뀌면 가닥 절반으로 먼저 그리고, 손이 쉬면 전체로 다시 그림. 끄기 TWO_PASS.on=false · 상태 TWO_PASS.status()');
 })();

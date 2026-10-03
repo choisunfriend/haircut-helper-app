@@ -18,8 +18,8 @@
  *    마지막 진단 글은 localStorage에도 남깁니다(앱이 꺼져도 DIAG_TOOLS.last()로 꺼냄).
  *
  * ④ 3D 진입 기록 — 3D 결과 화면에 들어갈 때마다 JS힙(진입 전 → 최고 → 끝)과 걸린 시간,
- *    그 순간의 성능 줄을 적어 둡니다. 3D 화면에도 [진단] 버튼을 답니다.
- *    3D 화면에서는 미뤄 둔 진단 계산을 돌리지 않습니다(전체 가닥을 다시 채우면 메모리가 도로 늘어남).
+ *    그 순간의 성능 줄을 적어 둡니다. 조정 화면의 진단 → [복사]에 같이 들어갑니다.
+ *    (3D 화면의 [진단] 버튼은 2026-10-03d에 뺐습니다 — 사용자 요청)
  *
  * 끄기: DIAG_TOOLS.on=false (②③④) · DIAG_TOOLS.camOff=false (①)
  * ========================================================================== */
@@ -230,31 +230,8 @@
     };
   }
 
-  var vp = document.getElementById('model3dViewport');
-  if (vp) {
-    var b3 = document.createElement('button');
-    b3.className = 'debug-btn'; b3.id = 'diag3DToggle'; b3.type = 'button'; b3.textContent = '진단';
-    b3.style.cssText = 'top:50px;min-height:40px;min-width:64px;padding:10px 14px;font-size:12px;touch-action:manipulation;';
-    var box3 = document.createElement('div');
-    box3.id = 'diag3DBox';
-    box3.style.cssText = 'display:none;position:absolute;left:8px;right:8px;top:98px;background:rgba(0,0,0,0.85);color:#0f0;font-family:monospace;font-size:10px;' +
-      'padding:8px;border-radius:6px;white-space:pre-wrap;z-index:50;max-height:55%;overflow:auto;';
-    ['pointerdown', 'touchstart', 'wheel'].forEach(function (ev) {
-      box3.addEventListener(ev, function (e) { e.stopPropagation(); }, { passive: true });
-      b3.addEventListener(ev, function (e) { e.stopPropagation(); }, { passive: true });
-    });
-    function close3() { box3.style.display = 'none'; }
-    b3.addEventListener('click', function (e) {
-      e.stopPropagation();
-      if (!T.on) return;
-      if (box3.style.display !== 'none') return close3();
-      var body = ['[3D 화면 진단 — 미뤄 둔 진단 계산은 돌리지 않음]'].concat(perfLinesLight(), ['', '── 3D 진입 기록 ──'], log3DLines()).join('\n').replace(/<\/?b>/g, '');
-      box3.textContent = body;
-      addBar(box3, function () { return fullText(null); }, close3);
-      box3.style.display = 'block';
-    });
-    vp.appendChild(b3); vp.appendChild(box3);
-  }
+  /* (2026-10-03d) 3D 화면의 [진단] 버튼은 뺐습니다(사용자 요청). 3D 진입 기록은 계속 남고,
+     조정 화면의 진단 → [복사]에 같이 들어갑니다. */
 
   console.log(TAG + ' 설치 — 촬영 화면 밖 카메라 끔 · 진단 버튼 키움/먼저 그림 · [복사] · 3D 진입 기록. ' +
     '글자 꺼내기 DIAG_TOOLS.text() · 마지막 기록 DIAG_TOOLS.last() · 끄기 DIAG_TOOLS.on=false / .camOff=false');

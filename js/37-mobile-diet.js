@@ -31,7 +31,11 @@
  *    화면이 얼지 않습니다. 미리 만들기 시작도 앞당겼습니다(700 → 400ms, 확인 간격 500 → 200ms).
  *    진단 줄에 마지막 헤어 만들기의 단계별 시간(가닥 계산 · 가닥 쓰기 · 음영)이 찍힙니다.
  *
- * 끄기: MOBILE_DIET.on=false (전부) · .entryProgress=false · .drag=false · .pre3D=false · .prune=false · .release3D=false · .freeFull=false
+ * ⑤ (2026-10-03d) 3D 결과 화면을 한꺼번에 보여 주기 — 원래 순서가 두상·헤어 → (의상 추천·로딩 0.2~0.8초) 의상
+ *    → 얼굴 메쉬라서 머리만 먼저 떠 있다가 옷과 얼굴이 뒤늦게 붙었습니다. 다 붙을 때까지 장면을 숨겼다가
+ *    한 번에 보여 줍니다(최대 6초 뒤에는 무조건 보여 줌).
+ *
+ * 끄기: MOBILE_DIET.on=false (전부) · .entryProgress=false · .showTogether=false · .drag=false · .pre3D=false · .prune=false · .release3D=false · .freeFull=false
  * 상태: MOBILE_DIET.status()
  * ========================================================================== */
 (function () {
@@ -48,6 +52,7 @@
     sliceMs: 12,         //    한 번에 일하는 시간
     entryProgress: true, // ④ 3D 진입 때 남은 일을 나눠서 하며 진행률 표시
     entrySliceMs: 40,    //    진입 때 한 조각
+    showTogether: true,  // ⑤ 3D 장면을 다 붙은 뒤 한꺼번에 보여 주기
     prune: true,         // ③ 옛 상태 캐시 즉시 버림
     release3D: true,     // ③ 3D 화면 나갈 때 장면 반납
     freeFull: true       // ③ 3D 화면에 들어갈 때 전체 가닥 기억 비움
@@ -570,16 +575,49 @@
   };
 
   var origSetup = W.setupModel3DScreen, setupGen = 0;
+  /* ⑤ 얼굴(메쉬 또는 사진 데칼)은 setupModel3DScreen이 끝난 뒤에 따로 붙으므로, 그 약속을 잡아 둠 */
+  var faceP = null, decalP = null;
+  ['buildRealFaceMesh', 'buildFacePhotoDecal'].forEach(function (name, idx) {
+    var f = W[name];
+    if (typeof f !== 'function') return;
+    W[name] = function () {
+      var r = f.apply(this, arguments);
+      if (idx === 0) { faceP = r; decalP = null; } else decalP = r;
+      return r;
+    };
+  });
+  function runSetup(self, args, gen, onShown) {
+    faceP = decalP = null;
+    var p = origSetup.apply(self, args), g = null;
+    function finish() { if (onShown) try { onShown(); } catch (e) {} }
+    try { g = D.showTogether && typeof model3D !== 'undefined' && model3D && model3D.initialized ? model3D.headGroup : null; } catch (e) { g = null; }
+    if (!g) { Promise.resolve(p).then(finish, finish); return p; }
+    g.visible = false;                                                   // 첫 프레임이 그려지기 전(같은 작업 안)
+    var done = false;
+    function show() { if (done) return; done = true; clearTimeout(guard); g.visible = true; finish(); }
+    var guard = setTimeout(show, 6000);
+    function settle(x) { return x && typeof x.then === 'function' ? x.then(function () {}, function () {}) : Promise.resolve(); }
+    return Promise.resolve(p).then(function (v) {
+      settle(faceP).then(function () { return settle(decalP); }).then(function () { setTimeout(show, 0); });
+      return v;
+    }, function (e) { show(); throw e; });
+  }
   if (typeof origSetup === 'function') {
     W.setupModel3DScreen = function () {
       var self = this, args = arguments, gen = ++setupGen;
-      if (!D.on || !D.pre3D || !D.entryProgress || !neutral()) return origSetup.apply(self, args);
-      try { if (pre.ready && pre.sig === fullSig(neutral())) return origSetup.apply(self, args); } catch (e) { return origSetup.apply(self, args); }
+      if (!D.on) return origSetup.apply(self, args);
+      if (!D.pre3D || !D.entryProgress || !neutral()) return runSetup(self, args, gen);
+      try { if (pre.ready && pre.sig === fullSig(neutral())) return runSetup(self, args, gen); } catch (e) { return runSetup(self, args, gen); }
       var shown = false, sub = null, lastPct = -1;
       try {
         if (typeof showAI === 'function') { showAI('3D 헤어 만드는 중…', '0%'); shown = true; sub = document.getElementById('aiOverlaySub'); }
       } catch (e) {}
       function hide() { if (shown) { shown = false; try { hideAI(); } catch (e) {} } }
+      function go() {
+        if (gen !== setupGen || scr() !== 'model3d') { hide(); return; }  // 그 사이 나갔거나 다시 들어옴
+        if (sub) sub.textContent = '의상·얼굴 붙이는 중…';
+        try { return runSetup(self, args, gen, hide); } catch (e) { hide(); throw e; }
+      }
       return new Promise(function (r) {                                  // 안내를 먼저 그리고 시작
         var raf = W.requestAnimationFrame || function (f) { return setTimeout(f, 16); };
         raf(function () { setTimeout(r, 0); });
@@ -588,15 +626,7 @@
           var pct = Math.round(f * 100);
           if (sub && pct !== lastPct) { lastPct = pct; sub.textContent = pct + '%'; }
         });
-      }).then(function () {
-        hide();
-        if (gen !== setupGen || scr() !== 'model3d') return;             // 그 사이 나갔거나 다시 들어옴
-        return origSetup.apply(self, args);
-      }, function (e) {
-        hide();
-        if (gen !== setupGen || scr() !== 'model3d') return;
-        return origSetup.apply(self, args);
-      });
+      }).then(go, go);
     };
   }
 
