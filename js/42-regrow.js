@@ -38,6 +38,21 @@
  *   · 사진에 머리가 없다고 나오는 자리의 뿌리는 억지로 그루터기를 세우지 않고 안 심습니다(페이드는 두피색 그대로).
  *   · 길이 상한 — 짧은 머리는 섹션별 원본 길이 중앙값 × 1.25, 어깨 아래로 내려오는 긴 머리는 넉넉히(p95 × 1.3).
  *
+ * v3 (2026-10-03c) 스타일 숫자로 재기 — 다시 기른 머리에서 스타일 스펙(등록 스타일과 같은 형식)을 잽니다.
+ *   [스타일 숫자 재기] 버튼 → 숫자를 보여 주고 → [이 숫자로 스타일 등록]. 등록된 스타일은 다른 손님에게
+ *   기존 경로(applyStyleSpec — 그 손님 마네킹에서 같은 cm·끝 높이가 되도록 역산)로 걸립니다.
+ *   무엇을 어떻게 재는가:
+ *     · 긴 머리 — 섹션별 "끝 높이"(tipAt: 정수리에서 두상 높이의 몇 배 아래에서 끝나는가). 가닥이 사진의 머리 끝까지
+ *       자랐으므로 그대로 믿습니다.
+ *     · 짧은 머리 — 섹션별 길이 cm. 두피에 누운 가닥은 사진만으로 길이를 알 수 없어서(1cm 머리가 겹겹이 누운 것과
+ *       10cm 머리가 누운 것이 겉에서 같아 보임) 그 자리의 두께로 어림합니다: 길이 ≈ 두께 × liftK(2.2).
+ *       ⚠ 어림값입니다 — 등록 전에 숫자를 보고, 다른 손님에게 건 뒤 슬라이더로 고치는 것을 전제로 합니다.
+ *     · 페이드 — 옆·뒤 아래쪽에서 "사진에 머리가 없어 안 심은 뿌리"가 차지하는 높이. 가드·테이퍼는 기본값.
+ *     · 뿌리 볼륨 — 윗머리(크라운+프론트) 뿌리 자리의 두께(cm)에서. 35 + 10×cm (1.5cm = 50 중립, 3.5cm = 70).
+ *     · 넘김 — 윗머리 가닥이 뒤로 흐르는 정도(+ 뒤로 · − 앞으로).
+ *     · 가르마 — 위치·세기를 재서 보여 주기만 합니다(스펙에는 아직 안 넣음 — 좌우 부호를 실제 사진으로 확인한 뒤 넣을 것).
+ *     · 컬 — 아직 안 잽니다(0으로 저장).
+ *
  * 끄기: 버튼 또는 REGROW.on=false 후 REGROW.refresh()
  * ========================================================================== */
 (function () {
@@ -59,6 +74,8 @@
     longShare: 0.1,
     inertia: 0.55,      // 직전 방향을 섞는 비율(0 = 사진 결 그대로)
     smooth: 2,          // 다 기른 뒤 고르게 펴는 횟수
+    liftK: 2.2,         // 짧은 머리 길이 어림 = 뿌리 자리 두께 × 이 값
+    minLenCm: 0.8,
     tapPx: 4,           // 머리 영역 판정 여유(800px 기준)
     gravity: 0.25,      // 두피 밖 구간에서 중력을 섞는 비율
     sliceMs: 30,
@@ -279,6 +296,7 @@
       return wsum > 1e-6 ? sum / wsum : G.tFloor;
     }
 
+    var info;
     /* 길이 상한·색 팔레트 — 원본 사진 가닥에서 */
     var lenBy = {}, colBy = {}, allLen = [];
     photo.strands.forEach(function (s) {
@@ -287,10 +305,12 @@
       (lenBy[k] || (lenBy[k] = [])).push(L); allLen.push(L);
       if (s.color) { var cl = colBy[k] || (colBy[k] = []); if (cl.length < 400) cl.push(s.color); }
     });
+    info = { isLong: false, skipY: {}, plantY: {} };
     var lowTips = 0;
     photo.strands.forEach(function (s) { if (s.pts[s.pts.length - 1].y < yBody) lowTips++; });
     var isLong = lowTips / Math.max(1, photo.strands.length) > G.longShare;
     var cPct = isLong ? G.longPct : G.lenPct, cMul = isLong ? G.longMul : G.lenMul;
+    info.isLong = isLong;
     var capAll = q(allLen, cPct) * cMul, cap = {};
     Object.keys(lenBy).forEach(function (k) { cap[k] = q(lenBy[k], cPct) * cMul; });
     function capFor(sec) { return cap[sec] > 0 ? cap[sec] : (capAll > 0 ? capAll : 0.5); }
@@ -333,6 +353,7 @@
       var sec = null; try { sec = resolveSection3D(F, CY, Es.b); } catch (e) {} sec = sec || 'crown';
       var Lcap = capFor(sec), ramp = Math.max(0.03, Math.min(0.12, 0.25 * Lcap));
       var stp = Math.max(G.step, Lcap / G.maxSteps);      // 긴 가닥은 걸음을 넓혀 걸음 수 상한에 안 걸리게
+      var tRoot = thickAt(F), rootY = F.y;
       var pts = [{ x: F.x, y: F.y, z: F.z }], P = F, s = 0, prev = null, miss = 0, k, d, dt, fl, estSteps = 0, steps = 0, free = false, stop = 'max';
 
       // 첫 방향과 앞뒤
@@ -375,15 +396,19 @@
         if (s >= Lcap) { stop = 'cap'; break; }
       }
       if (miss > 0) pts.length = Math.max(1, pts.length - miss);        // 머리 영역 밖으로 나간 꼬리는 버림
-      if (pts.length < 3) { st.skipped++; return null; }                // 사진에 머리가 없는 자리 — 그루터기를 억지로 세우지 않음
+      if (pts.length < 3) { st.skipped++; (info.skipY[sec] || (info.skipY[sec] = [])).push(rootY); return null; }   // 사진에 머리가 없는 자리 — 그루터기를 억지로 세우지 않음
+      (info.plantY[sec] || (info.plantY[sec] = [])).push(rootY);
       pts = smoothPts(pts);
+      var Larc = 0, ii; for (ii = 1; ii < pts.length; ii++) Larc += Math.hypot(pts[ii].x - pts[ii - 1].x, pts[ii].y - pts[ii - 1].y, pts[ii].z - pts[ii - 1].z);
+      var qi = Math.min(pts.length - 1, 6), ex = pts[qi].x - pts[0].x, ey = pts[qi].y - pts[0].y, ez = pts[qi].z - pts[0].z, el = Math.hypot(ex, ey, ez) || 1;
+      var rg = { t: tRoot, free: free, L: Larc, tipY: pts[pts.length - 1].y, dx: ex / el, dy: ey / el, dz: ez / el };
       if (stop === 'mask') st.stopMask++; else if (stop === 'cap') st.stopCap++; else st.stopMax++;
       st.steps += steps; st.est += estSteps;
 
       var view = 'front'; try { view = viewOfRoot(F0(pts)); } catch (e) {}
       var pal = colBy[sec] || colBy.crown, color = pal && pal.length ? pal[rnd() * pal.length | 0] : '#2B2320', colors = null;
       try { colors = bakeStrandColors3D(pts, photo, view, color, null); } catch (e) { colors = null; }
-      return { pts: pts, sec: sec, color: color, colors: colors, srcAngle: view, rootFacing: 0, regrown: true };
+      return { pts: pts, sec: sec, color: color, colors: colors, srcAngle: view, rootFacing: 0, regrown: true, rg: rg };
     }
     function F0(p) { return p[0]; }
 
@@ -433,7 +458,7 @@
           cams: cams.map(function (c) { return c.angle; }).join(',')
         };
         return { strands: out, viewCal: photo.viewCal, yTop: photo.yTop, CY: photo.CY, field: photo.field || null, occ: photo.occ || null,
-          grid: photo.grid, roots: photo.roots, mannequin: false, regrown: true };
+          grid: photo.grid, roots: photo.roots, mannequin: false, regrown: true, rgInfo: info };
       }
     };
   }
@@ -529,6 +554,154 @@
       btn.title = '두피 전체에 뿌리를 심고, 사진의 결을 직접 읽어 가닥을 다시 기릅니다';
       btn.addEventListener('click', function () { G.toggle(); });
       bar.appendChild(btn); syncBtn();
+    }
+  } catch (e) {}
+
+  /* ────────────────────────────────────────────────────────────────────────
+   * 스타일 숫자로 재기
+   * ────────────────────────────────────────────────────────────────────── */
+  function clampN(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  G.measure = function () {
+    var m = G.model;
+    if (!m || G.src !== state._hair3Dneutral || !m.strands || !m.strands.length) return null;
+    var info = m.rgInfo || { isLong: false, skipY: {}, plantY: {} };
+    var cm = 1; try { cm = modelCmPerUnit() || 1; } catch (e) {}
+    var hr = null; try { hr = headHeightRef(); } catch (e) {}
+    var order = (typeof SECTION_ORDER !== 'undefined') ? SECTION_ORDER : ['crown', 'front', 'temple', 'side', 'occipital', 'nape'];
+    var by = {}; m.strands.forEach(function (s) { if (s.rg) (by[s.sec] || (by[s.sec] = [])).push(s); });
+    var lenCm = {}, tipAt = {}, raw = {}, lenFallback = {}, cut = {};
+    order.forEach(function (sec) {
+      lenFallback[sec] = 50;
+      try {
+        var d = JSON.parse(JSON.stringify(SECTIONS[sec].defaults)); delete d.length; delete d.curl; delete d.wave; delete d.color; cut[sec] = d;
+      } catch (e) { cut[sec] = {}; }
+      var a = by[sec] || []; if (a.length < 8) return;
+      raw[sec] = { n: a.length, growCm: q(a.map(function (s) { return s.rg.L * cm; }), 0.5), thickCm: q(a.map(function (s) { return s.rg.t * cm; }), 0.5),
+        freePct: Math.round(a.filter(function (s) { return s.rg.free; }).length / a.length * 100) };
+      if (info.isLong) {
+        if (hr) tipAt[sec] = +((hr.yTop - q(a.map(function (s) { return s.rg.tipY; }), 0.5)) / hr.H).toFixed(3);
+      } else {
+        lenCm[sec] = +q(a.map(function (s) {
+          return (s.rg.free ? s.rg.L : Math.min(s.rg.L, Math.max(G.minLenCm / cm, G.liftK * s.rg.t))) * cm;
+        }), 0.5).toFixed(1);
+      }
+    });
+    // 뿌리 볼륨 · 넘김 · 가르마 — 윗머리에서
+    var top = (by.crown || []).concat(by.front || []);
+    var tTop = top.length ? q(top.map(function (s) { return s.rg.t * cm; }), 0.5) : 1.5;
+    var volume = Math.round(clampN(35 + 10 * tTop, 20, 95));
+    var swSum = 0; top.forEach(function (s) { swSum += -s.rg.dz; });
+    var sweep = top.length ? Math.round(clampN(100 * swSum / top.length, -100, 100)) : 0;
+    var part = { x: 0, score: 0, lateral: 0 };
+    try {
+      var E = getScalpEllipsoid(), best = -1, bx = 0, k, x0, okW, totW, lat = 0;
+      top.forEach(function (s) { lat += Math.abs(s.rg.dx); }); lat = top.length ? lat / top.length : 0;
+      for (k = -6; k <= 6; k++) {
+        x0 = k / 10 * E.a; okW = 0; totW = 0;
+        top.forEach(function (s) {
+          var w = Math.abs(s.rg.dx); totW += w;
+          if ((s.pts[0].x - x0) * s.rg.dx > 0) okW += w;      // 가르마 바깥쪽으로 흐르는가
+        });
+        if (totW > 0 && okW / totW > best) { best = okW / totW; bx = k / 10; }
+      }
+      part = { x: bx, score: best, lateral: lat };
+    } catch (e) {}
+    // 페이드
+    var low = ['side', 'nape', 'occipital', 'temple'], nSkip = 0, nPlant = 0, vs = [];
+    low.forEach(function (sec) {
+      var sk = info.skipY[sec] || [], pl = info.plantY[sec] || [], all = sk.concat(pl);
+      nSkip += sk.length; nPlant += pl.length;
+      if (!all.length) return;
+      var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all);
+      if (!(hi > lo)) return;
+      sk.forEach(function (y) { vs.push((y - lo) / (hi - lo)); });
+    });
+    var bareShare = nSkip + nPlant ? nSkip / (nSkip + nPlant) : 0;
+    var fade = { enabled: false, guard: 1, height: 35, blendWidth: 40, disc: 0, taper: 0 };
+    if (!info.isLong && bareShare > 0.12 && vs.length > 20) {
+      fade = { enabled: true, guard: 1, height: Math.round(clampN(100 * q(vs, 0.8) + 10, 10, 95)), blendWidth: 40, disc: 0, taper: 60 };
+    }
+    var styling = {}; try { styling = neutralStyling(); } catch (e) { styling = { sweep: 0, volume: 50, flow: 0, part: 0, partAmt: 0, finish: 50, sleek: 0 }; }
+    styling.sweep = sweep; styling.volume = volume;
+    var spec = { name: '', cut: cut, perm: { curl: 0, wave: 50 }, styling: styling, globalCurl: 0, fade: fade, lenFallback: lenFallback, version: 1, source: 'regrow' };
+    if (info.isLong) spec.tipAt = tipAt; else spec.lenCm = lenCm;
+    return { spec: spec, isLong: info.isLong, raw: raw, tTopCm: tTop, part: part, bareShare: bareShare, order: order };
+  };
+  G.measureLines = function (r) {
+    r = r || G.measure();
+    if (!r) return ['[스타일 숫자] 다시 기른 모델이 없습니다 — [다시 기르기]를 먼저 켜세요'];
+    var sp = r.spec, L = ['[스타일 숫자] 다시 기른 머리에서 잰 값 (' + (r.isLong ? '긴 머리 — 끝 높이로 저장' : '짧은 머리 — 길이 cm로 저장') + ')'];
+    if (r.isLong) {
+      L.push('  끝 높이(정수리에서 두상 높이의 몇 배 아래 · 1.00 ≈ 턱): ' + r.order.filter(function (k) { return sp.tipAt[k] != null; }).map(function (k) { return k + ' ' + sp.tipAt[k].toFixed(2); }).join(' · '));
+    } else {
+      L.push('  길이 cm(어림 — 두께×' + G.liftK + ' 또는 기른 길이 중 짧은 쪽): ' + r.order.filter(function (k) { return sp.lenCm[k] != null; }).map(function (k) { return k + ' ' + sp.lenCm[k]; }).join(' · '));
+    }
+    L.push('  참고 — 섹션별 [기른 길이 cm / 뿌리 자리 두께 cm / 두피 밖으로 늘어진 가닥 %]: ' + r.order.filter(function (k) { return r.raw[k]; }).map(function (k) {
+      return k + ' ' + n1(r.raw[k].growCm) + '/' + n1(r.raw[k].thickCm) + '/' + r.raw[k].freePct + '%'; }).join(' · '));
+    L.push('  페이드: ' + (sp.fade.enabled ? '켜짐 · 높이 ' + sp.fade.height + '% · 가드 ' + sp.fade.guard + ' · 테이퍼 ' + sp.fade.taper + '% (가드·테이퍼는 기본값)' : '꺼짐') +
+      ' · 옆·뒤에서 사진에 머리가 없던 뿌리 ' + Math.round(r.bareShare * 100) + '%');
+    L.push('  뿌리 볼륨 ' + sp.styling.volume + ' (윗머리 두께 ' + n1(r.tTopCm) + 'cm) · 넘김 ' + (sp.styling.sweep > 0 ? '+' : '') + sp.styling.sweep + ' (' + (sp.styling.sweep > 15 ? '뒤로' : sp.styling.sweep < -15 ? '앞으로' : '중립') + ')');
+    L.push('  가르마(재기만 — 스펙에는 아직 안 넣음): 위치 ' + (r.part.x > 0 ? '+' : '') + r.part.x.toFixed(1) + ' (두상 반폭 대비, 모델 x축) · 양쪽으로 갈라지는 정도 ' + Math.round(r.part.score * 100) + '% · 옆으로 흐르는 세기 ' + r.part.lateral.toFixed(2));
+    L.push('  컬: 아직 안 잽니다(0으로 저장)');
+    return L;
+  };
+  G.register = function () {
+    var r = G.measure();
+    if (!r) { try { showToast('먼저 [다시 기르기]를 켜세요'); } catch (e) {} return null; }
+    var name = null; try { name = prompt('이 스타일 이름을 입력하세요 (원본 머리에서 잰 숫자로 등록)', ''); } catch (e) {}
+    if (!name || !name.trim()) return null;
+    name = name.trim();
+    var id = 'custom-' + Date.now(), sections = {}, sbv = {};
+    r.order.forEach(function (sec) { try { sections[sec] = Object.assign({}, SECTIONS[sec].defaults, { curl: 0 }); } catch (e) {} });
+    try { (typeof ANGLES !== 'undefined' ? ANGLES : []).forEach(function (a) { sbv[a] = Object.assign({}, r.spec.styling); }); } catch (e) {}
+    r.spec.name = name;
+    var color = '#2A1B12'; try { color = (state.hairMasks.front && state.hairMasks.front.avgColor) || color; } catch (e) {}
+    var stl = { id: id, specId: id, spec: r.spec, name: name, tags: '원본에서 잼', isCustom: true, sections: sections, styling: Object.assign({}, r.spec.styling),
+      stylingByView: sbv, globalCurl: 0, length: 50, curl: 0, volume: r.spec.styling.volume, colorHex: color };
+    try {
+      STYLES.push(stl);
+      if (typeof saveCustomStylesToStorage === 'function') saveCustomStylesToStorage();
+      if (typeof buildStyleGrid === 'function') buildStyleGrid();
+      if (typeof showToast === 'function') showToast('"' + name + '" 스타일로 등록했어요');
+      console.log(TAG + ' 스타일 등록 "' + name + '"\n' + G.measureLines(r).join('\n'));
+    } catch (e) { console.warn(TAG + ' 스타일 등록 실패', e); return null; }
+    return stl;
+  };
+  var mbox = null;
+  G.showMeasure = function () {
+    var r = G.measure(), text = G.measureLines(r).join('\n');
+    console.log(text);
+    try {
+      var host = document.querySelector('#screen-adjust .adjust-preview'); if (!host) return;
+      if (!mbox) {
+        mbox = document.createElement('div');
+        mbox.style.cssText = 'position:absolute;left:8px;right:8px;top:70px;bottom:56px;z-index:80;background:rgba(0,0,0,0.9);color:#0f0;font:11px/1.6 monospace;padding:8px;border-radius:6px;white-space:pre-wrap;overflow:auto;';
+        host.appendChild(mbox);
+      }
+      mbox.textContent = '';
+      var bar = document.createElement('div'); bar.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;';
+      var mk = function (label, fn) {
+        var b = document.createElement('button'); b.type = 'button'; b.textContent = label;
+        b.style.cssText = 'min-height:30px;padding:4px 12px;border-radius:8px;border:1px solid #0f0;background:#062a06;color:#0f0;font:600 12px monospace;';
+        b.addEventListener('click', function (e) { e.stopPropagation(); fn(b); }); return b;
+      };
+      if (r) bar.appendChild(mk('이 숫자로 스타일 등록', function () { if (G.register()) mbox.style.display = 'none'; }));
+      bar.appendChild(mk('복사', function (b) {
+        try { navigator.clipboard.writeText(text).then(function () { b.textContent = '복사됨 ✓'; setTimeout(function () { b.textContent = '복사'; }, 1500); }, function () { b.textContent = '복사 실패'; }); } catch (e) { b.textContent = '복사 실패'; }
+      }));
+      bar.appendChild(mk('닫기', function () { mbox.style.display = 'none'; }));
+      mbox.appendChild(bar); mbox.appendChild(document.createTextNode(text));
+      mbox.style.display = 'block';
+    } catch (e) {}
+  };
+  if (G.button) try {
+    var bar3 = document.querySelector('#screen-adjust .mode-bar');
+    if (bar3) {
+      var mb = document.createElement('button');
+      mb.id = 'regrowMeasureBtn'; mb.type = 'button'; mb.textContent = '스타일 숫자 재기';
+      mb.title = '다시 기른 머리에서 길이·페이드·볼륨·넘김을 재서 스타일로 등록합니다';
+      mb.addEventListener('click', function () { G.showMeasure(); });
+      bar3.appendChild(mb);
     }
   } catch (e) {}
 
