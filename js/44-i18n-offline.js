@@ -1,0 +1,1 @@
+(function(){if(typeof I18N==='undefined')return;Object['assign'](I18N,{'오프라인에서도\x20가동됩니다':'Works\x20offline,\x20too'});}());
