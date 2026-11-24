@@ -85,7 +85,7 @@
                 title="내가 등록한 스타일만 삭제할 수 있어요">🗑 삭제</button>
         <button class="btn btn-ghost" id="salonUploadBtn" style="flex:1.4;" onclick="uploadStyleToSalon()" disabled
                 title="고른 내 스타일을 내 미용실 헤어스타일로 올립니다">✂ 미용실에 올리기</button>
-        <button class="btn btn-primary" id="toAdjustBtn" style="flex:2;" onclick="navTo('adjust')" disabled>3D로 보기 →</button>
+        <button class="btn btn-primary" id="toAdjustBtn" style="flex:2;" onclick="navTo('adjust')" disabled>조정하기 →</button>
       </div>
     </section>
     <section class="screen" id="screen-adjust">
@@ -99,7 +99,9 @@
         <button class="debug-btn mask-debug-btn" id="maskDebugToggle" onclick="toggleMaskDebug()">가닥 보기</button>
         <button class="debug-btn raw-debug-btn" id="rawDebugToggle" onclick="toggleRawDebug()">원본 결 보기</button>
         <button class="debug-btn field-debug-btn" id="fieldDebugToggle" onclick="toggleFieldDebug()">결필드 원본</button>
+        <button class="debug-btn" id="diagInfoToggle" onclick="toggleDiagInfo()" style="right:auto;left:8px;bottom:8px;">진단정보</button>
         <div id="diagInfoBox" style="display:none;position:absolute;left:8px;bottom:44px;right:8px;background:rgba(0,0,0,0.85);color:#0f0;font-family:monospace;font-size:10px;padding:8px;border-radius:6px;white-space:pre-wrap;z-index:50;max-height:200px;overflow:auto;"></div>
+        <div class="seg-status" id="segStatus"></div>
         <div class="view-zoom" id="adjustZoomBar">
           <button onclick="adjustViewStep(1/1.3)" title="축소">−</button>
           <span id="adjustZoomPct">100%</span>
@@ -177,6 +179,7 @@
         <div class="stage-bloom" aria-hidden="true"></div>
         <div class="stage-light" aria-hidden="true"></div>
         <div class="preview-tag" id="model3dTag">범용 3D 두상 · 확정 스타일 적용</div>
+        <button class="debug-btn mask-debug-btn" id="strandDebugToggle" onclick="toggleStrandDebug()">기준면 보기</button>
         <div class="view-zoom" id="model3dZoomBar">
           <button onclick="model3dZoomStep(1/1.3)" title="축소">−</button>
           <span id="model3dZoomPct">100%</span>
@@ -186,7 +189,7 @@
         <div class="model3d-hint" style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--text-muted);background:rgba(0,0,0,0.4);padding:4px 10px;border-radius:10px;">드래그 회전 · 두 손가락(Shift+드래그) 이동 · 핀치(휠) 확대</div>
       </div>
       <div style="display:flex;gap:8px;padding:10px 14px 14px;flex-shrink:0;">
-        <button class="btn btn-ghost" style="flex:1;font-size:13px;" onclick="navTo('style')">← 스타일</button>
+        <button class="btn btn-ghost" style="flex:1;font-size:13px;" onclick="navTo('result')">← 결과</button>
         <button class="btn btn-primary" style="flex:2;font-size:13px;" onclick="startNewCustomer()">새로 시작</button>
       </div>
     </section>
@@ -194,6 +197,8 @@
   <nav class="bottom-nav">
     <button class="nav-tab active" id="nav-capture" onclick="navTo('capture')"><span class="icon">📷</span>촬영</button>
     <button class="nav-tab" id="nav-style" onclick="navTo('style')" disabled><span class="icon">✂️</span>스타일</button>
+    <button class="nav-tab" id="nav-adjust" onclick="navTo('adjust')" disabled><span class="icon">🎚️</span>조정</button>
+    <button class="nav-tab" id="nav-result" onclick="navTo('result')" disabled><span class="icon">🧥</span>결과</button>
     <button class="nav-tab" id="nav-model3d" onclick="navTo('model3d')" disabled><span class="icon">🧑</span>3D</button>
   </nav>
 </div>
@@ -211,7 +216,6 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/MTLLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
 <script>let __visionModulePromise=null;function loadVisionModule(){return!__visionModulePromise&&(__visionModulePromise=import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9')),__visionModulePromise;}</script>
-<script>window['__deferCam']=(function(){try{return localStorage['getItem']('gyeol.onboard')!=='1';}catch(_0x266261){return![];}}());</script>
 <script src="js/01-face-landmarker.js?v=20261121f2d"></script>
 <script src="js/02-state-sections.js?v=20261017e"></script>
 <script src="js/03a-hair-mask.js?v=20261013m"></script>
@@ -222,8 +226,8 @@
 <script src="js/07a-render-canvas.js?v=20261123v2"></script>
 <script src="js/07b-render-compare.js?v=20261121f2d"></script>
 <script src="js/08-cut-engine.js?v=20261013m"></script>
-<script src="js/09-strand-dye.js?v=20261013m"></script>
-<script src="js/10-hair-render-2d.js?v=20261107dnz"></script>
+<script src="js/09-strand-dye.js?v=20261124s"></script>
+<script src="js/10-hair-render-2d.js?v=20261124s"></script>
 <script src="js/11-result-screen.js?v=20261013m"></script>
 <script src="js/12a-head-project.js?v=20261103earnear"></script>
 <script src="js/12b-head-measure.js?v=20261122simple"></script>
@@ -235,7 +239,7 @@
 <script src="js/15-project-3d.js?v=20261013m"></script>
 <script src="js/16-style-spec-diag.js?v=20261123llr"></script>
 <script src="js/17a-mannequin.js?v=20261123scalp14"></script>
-<script src="js/17b-cut3d-piece.js?v=20261124b"></script>
+<script src="js/17b-cut3d-piece.js?v=20261124curl"></script>
 <script src="js/18-perf-i18n-boot.js?v=20261124name"></script>
 <script src="js/19-stage-backdrop.js?v=20261013m"></script>
 <script src="js/20-outfit-match.js?v=20261013m"></script>
@@ -253,7 +257,7 @@
 <script src="js/31-i18n-en.js?v=20261017b"></script>
 <script src="js/32-call-probe.js?v=20261121c"></script>
 <script src="js/33-synth-photo.js?v=20261121c"></script>
-<script src="js/35-salon-bridge.js?v=20261123rel"></script>   
+<script src="js/35-salon-bridge.js?v=20261124b"></script>   
 <script src="js/36-erase-strand.js?v=20261101z"></script>   
 <script src="js/37-groom-recipe.js?v=20261101z"></script>  
 <script src="js/38-raw-trace.js?v=20261103raw3d"></script>
@@ -263,10 +267,10 @@
 <script src="js/42-sil-length.js?v=20261121c"></script>
 <script src="js/43-photo-amp-gain.js?v=20261121c"></script>
 <script src="js/44-i18n-offline.js?v=20261121c"></script>
-<script src="js/45-mask-cache.js?v=20261122mc"></script>
-<script src="js/46-hair-shade-pro.js?v=20261124a"></script>
-<script src="js/48-customer.js?v=20261124f"></script>
-<script src="js/49-onboarding.js?v=20261124f"></script>
+<script src="js/45-mask-cache.js?v=20261124vc"></script>
+<script src="js/46-hair-shade-pro.js?v=20261124b"></script>
+<script src="js/47-style-io.js?v=20261124io"></script>
+
 <script data-goatcounter="https://choisunfriend.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
