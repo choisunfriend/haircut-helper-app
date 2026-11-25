@@ -311,6 +311,7 @@ var ONBOARD = (function () {
     h += sec(8, L('사진과 개인정보', 'Photos and privacy'),
       ul([L('찍은 사진은 이 기기 안에서만 분석하고 서버로 보내지 않아요.', 'Photos are analyzed only on this device and never uploaded.'),
           L('「새로 시작」을 누르면 처음부터 다시 찍을 수 있어요.', 'Tap “Start over” to take new photos.')]));
+    h += '<div style="font-size:11px;color:#8A7F76;line-height:1.55;margin-top:22px;border-top:1px solid #E2D6C8;padding-top:10px;">' + bizInfo() + '</div>';
     h += '<div class="hp-row"><button type="button" class="hp-again">' + esc(L('표지 다시 보기', 'Show intro')) + '</button>'
       + '<button type="button" class="hp-close">' + esc(L('닫기', 'Close')) + '</button></div>';
     return h;
@@ -347,6 +348,16 @@ var ONBOARD = (function () {
 
   // ---- 표지(11-25) — 소개 5장을 '다음부터 보지 않기'로 끈 뒤에도 앱을 열 때마다 나옴: 앱 이름 · [시작하기] · [사용 설명서] ----
   var cov = null;
+  /* (11-25) 사업자 정보 · 통신판매중개자 고지(전자상거래법 제20조 — 초기 화면에서 미리 알림) — 표지 맨 아래 · 사용 설명서 맨 아래 */
+  function bizInfo() {
+    return esc(L('YL Company는 통신판매중개자로서 거래 당사자가 아니며, 입점 판매자가 등록한 상품·서비스 정보와 거래에 대한 책임은 각 판매자에게 있습니다.',
+                 'YL Company is a mail-order broker, not a party to transactions; each listed seller is responsible for its products, services and transactions.'))
+      + '<br>' + esc(L('상호 YL Company · 대표 이영조 · 사업자등록번호 484-21-02064 · 통신판매업 신고 제2025-경북구미-0728호',
+                       'YL Company · CEO Lee Youngjo · Business reg. 484-21-02064 · Mail-order reg. 2025-Gyeongbuk Gumi-0728'))
+      + '<br>' + esc(L('경북 구미시 신시로16길 141, 101동 1006호 · choisunfriend@gmail.com',
+                       '101-1006, 141 Sinsi-ro 16-gil, Gumi-si, Gyeongbuk, Korea · choisunfriend@gmail.com'))
+      + '<br>© 2026 YL Company. All rights reserved. · <a href="privacy.html" target="_blank" rel="noopener" style="color:inherit;">' + esc(L('개인정보처리방침', 'Privacy policy')) + '</a>';
+  }
   function drawCover() {
     cov.innerHTML = '<div class="ob-body" style="text-align:center;">' + ART.intro()
       + '<div style="font-family:Fraunces,serif;font-size:28px;font-weight:600;color:#E0A05A;margin-top:14px;">Today\'s Stylepeek</div>'
@@ -356,7 +367,7 @@ var ONBOARD = (function () {
       + '<button class="ob-next" type="button" style="flex:none !important;">' + esc(L('시작하기', 'Get started')) + '</button>'
       + '<button class="ob-prev ob-man" type="button">📖 ' + esc(L('사용 설명서', 'User guide')) + '</button>'
       + '<button class="ob-never ob-intro" type="button" style="align-self:center;">' + esc(L('처음 안내 다시 보기', 'Show intro again')) + '</button></div>'
-      + '<div style="font-size:11px;opacity:.45;text-align:center;margin-top:10px;">© 2026 YL Company. All rights reserved.</div>';
+      + '<div style="font-size:10.5px;opacity:.5;text-align:center;margin-top:10px;line-height:1.5;">' + bizInfo() + '</div>';
     cov.querySelector('.ob-next').onclick = function () { cov.style.display = 'none'; startCam(); };
     cov.querySelector('.ob-man').onclick = function () { O.manual(); };
     cov.querySelector('.ob-intro').onclick = function () { cov.style.display = 'none'; O.show(0); };
