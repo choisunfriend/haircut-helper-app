@@ -135,8 +135,8 @@ var ONBOARD = (function () {
         b: L('도와줄 사람이 폰을 들고 내 주위를 한 바퀴 돌면, 각도마다 가장 선명한 사진을 자동으로 골라요.<br>· 찍는 사람: 내 정면에서 [시작] → 머리를 화면 타원 안에 두고 15~20초 동안 천천히 한 바퀴 → 출발점에서 [끝내기]<br>· 찍히는 사람: 고개와 머리카락을 움직이지 마세요<br>촬영 화면의 「🔄 360° 촬영」 버튼으로 시작해요.',
              'A helper holds the phone and walks once around you; the sharpest photo at each angle is picked automatically.<br>· Helper: start in front of you with [Start] → keep your head inside the oval → one slow circle in 15–20 s → [Finish] back at the start<br>· You: keep your head and hair still<br>Start with the “🔄 360° Capture” button on the photo screen.') },
       { art: 'style', shot: ['model3d', 'map'], t: L('스타일 고르고 3D로 보기', 'Pick a style, see it in 3D'),
-        b: L('스타일을 고르면 3D 두상에 입혀서 보여 줘요. 손가락으로 돌려 보고, 왼쪽 아래 「헤어 컬러」로 색을 바꾸고, 「맵에서 고르기」로 그 스타일을 하는 미용실을 찾아요.<br>· 「스타일 미적용」은 지금 내 머리를 그대로 3D로 보여 줘요. 머리결을 하나하나 분석해서 시간이 오래 걸려요.',
-             'Pick a style and it goes onto your 3D head. Turn it with your finger, change the color with “Hair color” at the bottom left, and find salons with “Pick on map”.<br>· “No style applied” shows your current hair as it is in 3D. It analyzes every strand, so it takes a while.') },
+        b: L('스타일을 고르면 3D 두상에 입혀서 보여 줘요. 손가락으로 돌려 보고, 왼쪽 아래 「헤어 컬러」로 색을 바꾸고, 「맵에서 고르기」로 그 스타일을 하는 미용실이나 어울리는 옷을 파는 가게를 찾아요.<br>· 「스타일 미적용」은 지금 내 머리를 그대로 3D로 보여 줘요. 머리결을 하나하나 분석해서 시간이 오래 걸려요.',
+             'Pick a style and it goes onto your 3D head. Turn it with your finger, change the color with “Hair color” at the bottom left, and find salons or clothing stores with “Pick on map”.<br>· “No style applied” shows your current hair as it is in 3D. It analyzes every strand, so it takes a while.') },
       { art: 'privacy', t: L('사진은 이 기기 안에서만', 'Your photos stay on this device'),
         b: L('찍은 사진은 이 기기 안에서만 분석하고, 서버로 보내지 않아요. 다음 화면에서 카메라 사용을 허용해 주세요.',
              'Photos are analyzed only on this device and are never uploaded. Please allow camera access on the next screen.') }
@@ -203,6 +203,7 @@ var ONBOARD = (function () {
   var camStarted = false;
   function startCam() {
     if (camStarted) return; camStarted = true;
+    try { if (typeof cameraStream !== 'undefined' && cameraStream) return; } catch (e) {}   // (11-25) 05가 이미 켰으면 다시 안 켬(두 번 열림 방지)
     try { if (W.__deferCam && typeof initCamera === 'function') initCamera(); } catch (e) { console.warn(TAG + ' 카메라 시작 실패', e); }
   }
   /* 표지는 [건너뛰기]·[다음부터 보지 않기]를 누를 때까지 앱을 열 때마다 나옴(사용자 지정 11-24).
@@ -250,9 +251,9 @@ var ONBOARD = (function () {
         + '<h4>' + esc(L('헤어 컬러', 'Hair color')) + '</h4><ul>'
         + '<li>' + L('왼쪽 아래 「헤어 컬러」를 누르면 펼쳐져요. 색 견본을 누르거나 밝기·채도·색상을 움직여요.', 'Tap “Hair color” at the bottom left. Pick a swatch or move lightness, vividness and hue.') + '</li>'
         + '<li>' + L('「원래 색으로」는 염색 전 머리색. 화면 색은 참고용이에요.', '“Reset” goes back to your natural color. Screen color is only a guide.') + '</li></ul>'
-        + '<h4>' + esc(L('옷 · 미용실', 'Outfits · salons')) + '</h4><ul>'
+        + '<h4>' + esc(L('옷 · 미용실 · 옷가게', 'Outfits · salons · stores')) + '</h4><ul>'
         + '<li>' + L('「옷 고르기」로 옷을 바꿔 입혀 봐요. 위쪽 Hair pin으로 머리핀도.', 'Change outfits with “Pick clothes”; try hair pins at the top.') + '</li>'
-        + '<li>' + L('「맵에서 고르기」로 근처 미용실과 그 미용실 스타일을 찾아요.', 'Use “Pick on map” to find nearby salons and their styles.') + '</li></ul>';
+        + '<li>' + L('「맵에서 고르기」로 근처 미용실·옷가게를 찾고, 그 가게의 헤어스타일이나 옷을 입어 봐요.', 'Use “Pick on map” to find nearby salons and clothing stores, and try on their styles or clothes.') + '</li></ul>';
     }
     h += '<div class="hp-row" style="margin-top:12px;"><button type="button" class="hp-manual" style="background:#1B1816;color:#F3E9DA;border:none;">📖 ' + esc(L('사용 설명서 (전체 화면 보기)', 'Full user guide')) + '</button></div>';
     h += '<div class="hp-row"><button type="button" class="hp-again">' + esc(L('처음 안내 다시 보기', 'Show intro again')) + '</button>'
@@ -302,10 +303,11 @@ var ONBOARD = (function () {
       row([{ f: 'shoplist', c: L('① 상품 고르기', '① Pick an item') }, { f: 'shopdetail', c: L('② 「입어 보기」', '② “Try on”') }, { f: 'shopresult', c: L('③ 입힌 모습', '③ Wearing it') }]) + aiNote()
       + ul([L('「옷 고르기」를 누르면 쇼핑몰이 열려요. 상품을 누르고 「입어 보기」를 누르면 3D 몸에 입혀져요.', 'Tap “Pick clothes” to open the shop. Open an item and tap “Try on” to put it on the 3D body.'),
           L('입은 옷은 왼쪽 줄에 이름이 생기고, 「고른 옷 벗기」로 벗어요. 쇼핑몰은 위 ✕로 닫아요.', 'The item appears in the left column; “Clear picks” removes it. Close the shop with ✕.')]));
-    h += sec(7, L('맵에서 고르기 (미용실)', 'Pick on map (salons)'),
-      row([{ f: 'mapview', c: L('① 지도에서 미용실', '① Salons on the map') }, { f: 'map', c: L('② 스타일 「입어 보기」', '② “Try on” a style') }, { f: 'maptry', c: L('③ 내 두상에 입힌 모습', '③ On your head') }]) + aiNote()
-      + ul([L('「맵에서 고르기」를 누르면 미용실 지도가 열려요. 주소나 동네로 검색하고, 「미용실」만 골라 볼 수 있어요.', 'Tap “Pick on map” to open the salon map. Search by address or area, or filter to “Salons”.'),
-          L('미용실을 누르면 그 미용실 헤어스타일과 가격·시간이 나와요. 「입어 보기」를 누르면 내 3D 두상에 그 스타일이 입혀져요.', 'Tap a salon to see its styles with price and time. “Try on” puts that style on your 3D head.')]));
+    h += sec(7, L('맵에서 고르기 (미용실 · 옷가게)', 'Pick on map (salons · stores)'),
+      row([{ f: 'mapview', c: L('① 지도에서 가게 찾기', '① Stores on the map') }, { f: 'map', c: L('② 스타일·옷 「입어 보기」', '② “Try on” a style or item') }, { f: 'maptry', c: L('③ 내 두상에 입힌 모습', '③ On your head') }]) + aiNote()
+      + ul([L('「맵에서 고르기」를 누르면 미용실과 옷가게가 표시된 지도가 열려요. 주소나 동네로 검색하고, 「미용실」·「옷가게」 중 원하는 종류만 골라 볼 수 있어요.', 'Tap “Pick on map” to open a map of salons and clothing stores. Search by address or area, or filter to “Salons” or “Clothing stores”.'),
+          L('미용실을 누르면 그 미용실 헤어스타일과 가격·시간이 나와요. 「입어 보기」를 누르면 내 3D 두상에 그 스타일이 입혀져요.', 'Tap a salon to see its styles with price and time. “Try on” puts that style on your 3D head.'),
+          L('옷가게를 누르면 그 가게의 옷과 가격이 나와요. 「입어 보기」를 누르면 3D 몸에 그 옷이 입혀져요.', 'Tap a clothing store to see its items and prices. “Try on” puts the item on your 3D body.')]));
     h += sec(8, L('사진과 개인정보', 'Photos and privacy'),
       ul([L('찍은 사진은 이 기기 안에서만 분석하고 서버로 보내지 않아요.', 'Photos are analyzed only on this device and never uploaded.'),
           L('「새로 시작」을 누르면 처음부터 다시 찍을 수 있어요.', 'Tap “Start over” to take new photos.')]));
