@@ -1,0 +1,63 @@
+{
+  // 프론트엔드(Next.js) Worker — 기존 백엔드 API Worker("tryon-marketplace")와 이름이 겹치지 않게 따로 둡니다.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "main": ".open-next/worker.js",
+  "name": "tryon-marketplace-web",
+  "compatibility_date": "2025-12-01",
+  // 접속 주소(https://tryon-marketplace-web.choisunfriend.workers.dev)를 배포 때마다 켜둡니다
+  "workers_dev": true,
+  // 브랜치별 미리보기 주소는 쓰지 않음
+  "preview_urls": false,
+  // global_fetch_strictly_public: 같은 계정의 다른 workers.dev(백엔드 API)를 fetch 할 때 막히지 않게
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "tryon-marketplace-web"
+    }
+  ],
+  // 상품 이미지·3D 파일 저장소 — 관리자 업로드(/api/assets/upload)와 파일 제공(/api/assets/...)에 씁니다
+  // (2026-11-15 보안) 관리자 로그인 시도 제한 — 같은 IP 에서 1분에 10번까지.
+  //   workers.dev 주소에는 WAF 가 없어서 Worker 안에서 직접 셉니다(모든 서버가 같이 셈).
+  "ratelimits": [
+    {
+      "name": "LOGIN_LIMITER",
+      "namespace_id": "1101",
+      "simple": { "limit": 10, "period": 60 }
+    },
+    // (2026-11-15) 고객 앱 — 가입 없이 시작·로그인 (IP 당 1분 20번)
+    {
+      "name": "CUSTOMER_LIMITER",
+      "namespace_id": "1102",
+      "simple": { "limit": 20, "period": 60 }
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "ASSETS_BUCKET",
+      "bucket_name": "tryon-marketplace-assets"
+    }
+  ],
+  // (2026-11-01) 상품 D1 — 백엔드 API Worker(tryon-marketplace)가 쓰는 것과 같은 데이터베이스.
+  // 관리자 화면의 목록·등록·수정·삭제가 여기서 바로 읽고 씁니다(src/lib/products-db.ts).
+  // ⚠ database_name · database_id 를 대시보드 → Storage & Databases → D1 에서 확인해 바꿔 넣으세요(지금 값은 자리표시).
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tryon-marketplace-db",
+      "database_id": "b58dc994-58db-4024-a2ff-97da2d0bb060"
+    }
+  ],
+  // GYEOL 앱 주소(공백 구분, https 만 · 와일드카드 안 됨) — 매장 iframe 허용(frame-ancestors)과 3D 파일 CORS 에 씁니다
+  // (2026-10-17 보안 1차: *.choisunfriend.workers.dev 와일드카드 제거)
+  "vars": {
+    "FRAME_ANCESTORS": "https://choisunfriend.github.io",
+    // (2026-11-28) 애플 로그인을 받아 줄 앱(번들 ID) — 다른 앱이 받은 애플 로그인은 거절
+    "APPLE_CLIENT_IDS": "com.ylcompany.stylepeek"
+  },
+  "observability": { "enabled": true }
+}
