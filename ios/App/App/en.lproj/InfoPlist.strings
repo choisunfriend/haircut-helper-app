@@ -1,0 +1,5 @@
+"CFBundleDisplayName" = "Today's Stylepeek";
+"NSCameraUsageDescription" = "Takes front, side and back photos to build a 3D model of your head and hair. Photos are processed on your device.";
+"NSPhotoLibraryUsageDescription" = "Uses photos from your library to build a 3D model of your head. Photos are processed on your device.";
+"NSPhotoLibraryAddUsageDescription" = "Saves your hairstyle preview images to your Photos.";
+"NSFaceIDUsageDescription" = "Confirm it is you with Face ID to protect your saved photos.";

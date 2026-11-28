@@ -1,0 +1,5 @@
+"CFBundleDisplayName" = "Today's Stylepeek";
+"NSCameraUsageDescription" = "머리 모양을 3D로 만들기 위해 정면·옆·뒤 사진을 찍습니다. 찍은 사진은 기기 안에서만 처리합니다.";
+"NSPhotoLibraryUsageDescription" = "갤러리에 있는 내 사진으로 3D 두상을 만들 때 사용합니다. 사진은 기기 안에서만 처리합니다.";
+"NSPhotoLibraryAddUsageDescription" = "만든 헤어 미리보기 사진을 내 사진 앱에 저장합니다.";
+"NSFaceIDUsageDescription" = "저장된 사진을 보호하려고 Face ID로 본인인지 확인합니다.";
